@@ -1,0 +1,1194 @@
+{
+  "updatedAt": "2026-10-22T11:43:39.597Z",
+  "createdAt": "2026-10-19T09:23:29.861Z",
+  "id": "7255169b-555f-4492-985a-22e261f9aa4c",
+  "name": "My workflow 8 - 飞书存档(增强)",
+  "description": "",
+  "active": false,
+  "isArchived": false,
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "feishu-bot-callback",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "a1b2c3d4-0001-4a1a-9a1a-000000000001",
+      "name": "飞书群机器人回调 Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        -640,
+        -48
+      ],
+      "webhookId": "6e9bd66e-fe81-4cfc-b2a7-5b4112938ab8"
+    },
+    {
+      "parameters": {
+        "jsCode": "// n8n Webhook 的请求体通常在 $json.body；此处兼容 顶层对象 / body对象 / body字符串 / data对象\nconst raw = $json || {};\nlet body = raw;\nif (raw.body !== undefined && raw.body !== null) {\n  if (typeof raw.body === 'object') { body = raw.body; }\n  else if (typeof raw.body === 'string') {\n    try { body = JSON.parse(raw.body); } catch (e) { body = raw; }\n  }\n}\nif (!body || (body.type === undefined && body.header === undefined && body.challenge === undefined)) {\n  if (raw.data && typeof raw.data === 'object') { body = raw.data; }\n}\n\n// 1) URL 验证握手\nconst isVerify = (body.type === 'url_verification') || (typeof body.challenge === 'string' && body.challenge.length > 0);\nif (isVerify) {\n  return [{ json: { challenge: body.challenge } }];\n}\n\n// 2) 群聊 @ 机器人消息事件\nconst header = body.header || {};\nif (header.event_type === 'im.message.receive_v1') {\n  const event = body.event || {};\n  const message = event.message || {};\n  const chatId = message.chat_id || 'YOUR_FEISHU_CHAT_ID';\n  const messageId = message.message_id || '';\n  const msgType = message.message_type || 'text';\n  let text = '';\n  try {\n    const c = JSON.parse(message.content || '{}');\n    text = c.text || '';\n  } catch (e) { text = ''; }\n  text = text.replace(/@_user_\\d+\\s*/g, '').replace(/@[^\\s]+\\s*/g, '').trim();\n  return [{ json: { chatInput: text, chat_id: chatId, message_id: messageId, msg_type: msgType, sender: (event.sender || {}).sender_id || null } }];\n}\n\n// 3) 其它事件\nreturn [{ json: { skipped: true } }];"
+      },
+      "id": "a1b2c3d4-0002-4a1a-9a1a-000000000002",
+      "name": "飞书事件解析",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -448,
+        -48
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "typeValidation": "strict"
+          },
+          "combinator": "and",
+          "conditions": [
+            {
+              "leftValue": "={{ $json.challenge ? 'Y' : 'N' }}",
+              "rightValue": "Y",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              },
+              "id": "cond_verify"
+            }
+          ]
+        }
+      },
+      "id": "a1b2c3d4-0003-4a1a-9a1a-000000000003",
+      "name": "验证握手?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        -272,
+        -48
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "firstIncomingItem",
+        "options": {}
+      },
+      "id": "a1b2c3d4-0004-4a1a-9a1a-000000000004",
+      "name": "Respond 验证",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [
+        -96,
+        -192
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "firstIncomingItem",
+        "options": {}
+      },
+      "id": "a1b2c3d4-0005-4a1a-9a1a-000000000005",
+      "name": "Respond 回执",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [
+        -96,
+        16
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://open.feishu.cn/open-apis/auth/v3/tenant_access_token/internal",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\"app_id\":\"YOUR_FEISHU_APP_ID\",\"app_secret\":\"YOUR_FEISHU_APP_SECRET\"}",
+        "options": {}
+      },
+      "id": "a1b2c3d4-0006-4a1a-9a1a-000000000006",
+      "name": "回发获取Token",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.5,
+      "position": [
+        2304,
+        192
+      ],
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "url": "={{ $('Code in JavaScript3').first().json.featuredImageUrl }}",
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "file"
+            }
+          }
+        }
+      },
+      "id": "a1b2c3d4-0007-4a1a-9a1a-000000000007",
+      "name": "回发下载配图",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.5,
+      "position": [
+        2528,
+        192
+      ],
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://open.feishu.cn/open-apis/im/v1/images",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $('回发获取Token').first().json.tenant_access_token }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "multipart-form-data",
+        "bodyParameters": {
+          "parameters": [
+            {
+              "parameterType": "formBinaryData",
+              "name": "image",
+              "inputDataFieldName": "data"
+            },
+            {
+              "parameterType": "formData",
+              "name": "image_type",
+              "value": "message"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "id": "a1b2c3d4-0008-4a1a-9a1a-000000000008",
+      "name": "回发上传图片",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.5,
+      "position": [
+        2752,
+        192
+      ],
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "// 群内直发全文：不截断正文；超长按段落自动拆成多条 post 消息\n// 第 1 条带配图，最后 1 条带文档/WordPress 链接\nconst c3 = $('Code in JavaScript3').first().json || {};\nconst brief = (c3.brief || '').trim();\nconst query = c3.query || '';\n// ↓↓↓ 公网基址：由 _diag/refresh_public_urls.py 自动维护（cpolar 域名每日可能变化）\nconst WP_PUBLIC_BASE = 'https://YOUR_CPOLAR_HOST';\nlet wpLink = (($('Create a post').first().json) || {}).link || '';\nif (wpLink && WP_PUBLIC_BASE) {\n  wpLink = wpLink.replace(/^https?:\\/\\/[^/]+/i, WP_PUBLIC_BASE.replace(/\\/+$/, ''));\n}\nconst docNode = $('飞书建文档').first().json || {};\nconst docId = (docNode.data && docNode.data.document && docNode.data.document.document_id) || '';\nconst docLink = docId ? ('https://www.feishu.cn/docx/' + docId) : '';\nconst chatId = $('飞书事件解析').first().json.chat_id || 'YOUR_FEISHU_CHAT_ID';\nconst up = $('回发上传图片').first().json || {};\nconst imageKey = (up.data && up.data.image_key) || up.image_key || '';\n\n// 单条 post 的正文上限（字）。飞书单条消息内容有大小限制，按 3000 字留足余量\nconst CHUNK = 3000;\n\nfunction chunkText(t, size) {\n  const paras = String(t || '').split(/\\n+/).map((s) => s.trim()).filter(Boolean);\n  if (!paras.length) return [''];\n  const out = [];\n  let cur = '';\n  for (const para of paras) {\n    // 单段就超长时，硬切\n    if (para.length > size) {\n      if (cur) { out.push(cur); cur = ''; }\n      for (let i = 0; i < para.length; i += size) out.push(para.slice(i, i + size));\n      continue;\n    }\n    if (!cur) { cur = para; }\n    else if ((cur.length + 1 + para.length) <= size) { cur = cur + '\\n' + para; }\n    else { out.push(cur); cur = para; }\n  }\n  if (cur) out.push(cur);\n  return out;\n}\n\nconst parts = chunkText(brief, CHUNK);\nconst total = parts.length;\nconst items = [];\n\nparts.forEach((seg, i) => {\n  const isFirst = (i === 0);\n  const isLast = (i === total - 1);\n  const blocks = [];\n\n  const head = isFirst\n    ? ('📌 ' + query + '\\n\\n')\n    : ('（续 ' + (i + 1) + '/' + total + '）\\n\\n');\n  blocks.push([{ tag: 'text', text: head + seg }]);\n\n  if (isFirst && imageKey) blocks.push([{ tag: 'img', image_key: imageKey }]);\n\n  const links = [];\n  if (docLink) links.push('📄 飞书文档：' + docLink);\n  if (wpLink) links.push('🌐 WordPress：' + wpLink);\n  if (isLast && links.length) blocks.push([{ tag: 'text', text: links.join('\\n') }]);\n\n  const title = isFirst\n    ? '🤖 简报已生成'\n    : ('🤖 简报（续 ' + (i + 1) + '/' + total + '）');\n\n  items.push({\n    json: {\n      chat_id: chatId,\n      postContent: JSON.stringify({ zh_cn: { title, content: blocks } }),\n      part: i + 1,\n      total,\n      textLen: seg.length\n    }\n  });\n});\n\nreturn items;"
+      },
+      "id": "a1b2c3d4-0009-4a1a-9a1a-000000000009",
+      "name": "组装群聊回发卡",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2976,
+        192
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://open.feishu.cn/open-apis/im/v1/messages?receive_id_type=chat_id",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $('回发获取Token').first().json.tenant_access_token }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ receive_id: $json.chat_id, msg_type: 'post', content: $json.postContent }) }}",
+        "options": {}
+      },
+      "id": "a1b2c3d4-000a-4a1a-9a1a-00000000000a",
+      "name": "发送富文本卡片",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.5,
+      "position": [
+        3200,
+        192
+      ],
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=你是资深产业分析师。请基于下面的检索素材，写一份中文深度简报。\n\n硬性要求：\n1. 必须分为 6 个小节，每个小节以【】包裹的中文小标题开头，每节正文不少于 300 字，整体正文约 2000 字。\n2. 每节要有具体数据、机构/公司名称或时间点，禁止空话套话。\n3. 不写\"总结\"\"结语\"类收尾段落，写满第 6 节即结束。\n4. 最后提炼 2 个适合配图的中文关键词。\n\n输出格式必须是严格 JSON，不要 markdown 代码块，不要任何解释文字：\n{\"brief\": \"简报正文（含【】小标题，用\\\\n换行）\", \"image_keywords\": [\"关键词1\", \"关键词2\"]}\n\n检索素材：\n{{ $json.search_text }}",
+        "options": {}
+      },
+      "id": "7d1ece3b-c360-466d-b681-e45a3ed82418",
+      "name": "AI Agent",
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 3.1,
+      "position": [
+        208,
+        -48
+      ]
+    },
+    {
+      "parameters": {
+        "model": "qwen3:8b",
+        "options": {
+          "temperature": 0.4,
+          "numCtx": 16384,
+          "numPredict": 4096
+        }
+      },
+      "id": "5b039ecd-1f42-4ac2-9b10-f562b94181bb",
+      "name": "Ollama Chat Model",
+      "type": "@n8n/n8n-nodes-langchain.lmChatOllama",
+      "typeVersion": 1,
+      "position": [
+        64,
+        192
+      ],
+      "credentials": {
+        "ollamaApi": {
+          "id": "kO0KsE5mWwMwmPY9",
+          "name": "Ollama account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "endpointUrl": "http://host.docker.internal:3001",
+        "options": {
+          "timeout": 60000
+        }
+      },
+      "id": "c0bb7ce2-d9db-4c1c-bece-bb8ea5f39a69",
+      "name": "MCP Client2",
+      "notesInFlow": true,
+      "type": "@n8n/n8n-nodes-langchain.mcpClientTool",
+      "typeVersion": 1.4,
+      "position": [
+        416,
+        208
+      ],
+      "notes": "this is  a mcp clinet"
+    },
+    {
+      "parameters": {
+        "sessionIdType": "customKey",
+        "sessionKey": "={{ $('飞书事件解析').first().json.chat_id }}",
+        "contextWindowLength": 10
+      },
+      "id": "2ca5b204-c08b-4f1e-8797-115ba3a51c45",
+      "name": "Simple Memory",
+      "type": "@n8n/n8n-nodes-langchain.memoryBufferWindow",
+      "typeVersion": 1.4,
+      "position": [
+        240,
+        192
+      ]
+    },
+    {
+      "parameters": {
+        "fromEmail": "yangdq_lc@163.com",
+        "toEmail": "13332833833@163.com",
+        "subject": "={{ $('Code in JavaScript3').first().json.query }}",
+        "html": "={{ $('Code in JavaScript3').first().json.htmlEmail }}",
+        "options": {}
+      },
+      "id": "91d8212e-a3b2-4ab5-bbb0-985ce5099a55",
+      "name": "Send an Email",
+      "webhookId": "76fdf513-58c4-4491-86a7-8c17fbe214fd",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [
+        1808,
+        -48
+      ],
+      "credentials": {
+        "smtp": {
+          "id": "sV9FrbhJx8apvKv5",
+          "name": "SMTP account"
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "url": "http://searxng:8080/search",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "q",
+              "value": "={{ $json.chatInput }}"
+            },
+            {
+              "name": "format",
+              "value": "json"
+            },
+            {
+              "name": "language",
+              "value": "zh-CN"
+            },
+            {
+              "name": "categories",
+              "value": "general"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "6d62f73a-9cb3-4025-97ff-0654f56dc00f",
+      "name": "HTTP Request",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.5,
+      "position": [
+        -16,
+        -48
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const data = $input.first().json;\nconst list = data.results || [];\n\nconst text = list.slice(0, 6).map((r, i) =>\n  `【${i + 1}】${r.title || '无标题'}\\n链接：${r.url || ''}\\n摘要：${r.content || '（无摘要）'}`\n).join('\\n\\n');\n\nconst trig = $('飞书事件解析').first().json;\nreturn [{\n  json: {\n    query: trig.chatInput,\n    search_text: text,\n    sessionId: trig.chat_id || 'feishu-group'\n  }\n}];"
+      },
+      "id": "afee8663-07f5-4add-a58a-871614ae5faa",
+      "name": "Code in JavaScript",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        96,
+        -48
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const items = $input.all();\nif (items.length === 0) return items;\n\nconst output = items[0].json;\n// 1. 兼容多种 Ollama 返回格式\nlet rawText = output.text || output.output || output.content || output.message?.content || '';\n\n// 2. 提取 JSON 内容（防止 Ollama 输出额外的废话或 Markdown）\nlet jsonMatch = rawText.match(/[\\s\\S]*\\{[\\s\\S]*\\}[\\s\\S]*/);\nif (!jsonMatch) jsonMatch = [rawText]; // 兜底\n\nlet parsed = {};\ntry {\n    parsed = JSON.parse(jsonMatch[0]);\n} catch (error) {\n    // 如果解析失败，尝试用正则提取 brief 和 keywords 字段\n    const briefMatch = rawText.match(/\"brief\"\\s*:\\s*\"([^\"]*)\"/);\n    const keysMatch = rawText.match(/\"image_keywords\"\\s*:\\s*\\[(.*?)\\]/s);\n    \n    parsed = {\n        brief: briefMatch ? briefMatch[1] : rawText,\n        image_keywords: keysMatch ? keysMatch[1].split(',').map(s => s.trim().replace(/\"/g, '')) : []\n    };\n}\n\nconst brief = parsed.brief || rawText;\nconst keywords = Array.isArray(parsed.image_keywords) ? parsed.image_keywords.filter(Boolean) : [];\nconst query = $('飞书事件解析')?.first()?.json?.chatInput || $('Switch').params?.query || '未知主题';\n\nconst results = [];\n\n// 3. 始终生成简报数据\nresults.push({\n    json: {\n        type: 'brief',\n        query,\n        brief\n    }\n});\n\n// 4. 只有当确实存在有效关键词时，才生成搜索数据\nif (keywords.length > 0) {\n    results.push({\n        json: {\n            type: 'image_search',\n            query,\n            brief,\n            keyword: keywords[0] // 只取第一个关键词\n        }\n    });\n}\n\nreturn results;"
+      },
+      "id": "3d475114-f351-4281-a71d-b0ac5c4fda0f",
+      "name": "Code in JavaScript1",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        464,
+        -112
+      ]
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.type }}",
+                    "rightValue": "brief",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    },
+                    "id": "c2098819-d66a-410d-86e4-9557fb249818"
+                  }
+                ],
+                "combinator": "and"
+              }
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "id": "b825f4ad-68b4-4367-92ee-d65818dd9747",
+                    "leftValue": "={{ $json.type }}",
+                    "rightValue": "image_search",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals",
+                      "name": "filter.operator.equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              }
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "0e4b6edf-c254-48f3-9e45-6a5f3232b352",
+      "name": "Switch",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.4,
+      "position": [
+        576,
+        -48
+      ]
+    },
+    {
+      "parameters": {
+        "url": "http://searxng:8080/search",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "q",
+              "value": "={{ $('Code in JavaScript1').item.json.keyword }}"
+            },
+            {
+              "name": "format",
+              "value": "json"
+            },
+            {
+              "name": "categories",
+              "value": "images"
+            },
+            {
+              "name": "language",
+              "value": "zh-CN"
+            },
+            {
+              "name": "num_results",
+              "value": "5"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "60422a91-2b33-443a-897b-3cdba470c09c",
+      "name": "HTTP Request1",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.5,
+      "position": [
+        720,
+        96
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const data = $input.first().json;\nconst list = data.results || [];\n\nconst images = list.slice(0, 3).map((r, i) => ({\n  index: i + 1,\n  title: r.title || '无标题',\n  url: r.url || '',\n  thumbnail: r.thumbnail_src || r.thumbnail || '',\n  img_src: r.img_src || ''\n}));\n\nreturn [{\n  json: {\n    type: 'image_result',\n    keyword: $('Switch').first().json.keyword,\n    images\n  }\n}];"
+      },
+      "id": "8bf813f1-8b28-477d-b6a9-5e81076a0243",
+      "name": "Code in JavaScript2",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        848,
+        96
+      ]
+    },
+    {
+      "parameters": {},
+      "id": "ca2a128b-50da-4949-ac4c-e47e681e4214",
+      "name": "Merge",
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3.2,
+      "position": [
+        992,
+        -48
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// 模式：Run Once for All Items\n// 加固：$input 可能在\"节点重跑/paired-item 过滤\"场景丢 item（实证执行#5774），\n// 故同时按节点名兜底补拉 Merge / Code1 / Code2 的输出，按 JSON 去重。\nfunction safeAll(name) {\n  try {\n    const ref = $(name);\n    return (ref && typeof ref.all === 'function') ? ref.all() : [];\n  } catch (e) { return []; }\n}\nconst pool = [];\nconst seenJson = new Set();\nconst sources = []\n  .concat($input.all() || [])\n  .concat(safeAll('Merge'))\n  .concat(safeAll('Code in JavaScript2'))\n  .concat(safeAll('Code in JavaScript1'));\nfor (const it of sources) {\n  if (!it || !it.json) continue;\n  const k = JSON.stringify(it.json);\n  if (seenJson.has(k)) continue;\n  seenJson.add(k);\n  pool.push(it.json);\n}\n\nlet keyword = \"\";\nlet brief = \"\";\nlet query = \"\";\nconst imgCandidates = [];\n\nfunction pushImg(url, title) {\n  if (typeof url !== \"string\" || !url.startsWith(\"http\")) return;\n  if (url.includes('.html') || url.includes('search?q') || url.includes('lemmaId=')) return;\n  imgCandidates.push({ url, title: title || keyword || \"相关配图\" });\n}\n\nfor (const j of pool) {\n  if (j.query) query = j.query;\n  if (j.brief) brief = j.brief;\n  if (j.keyword) keyword = j.keyword;\n  pushImg(j.img_src, j.title);\n  pushImg(j.thumbnail, j.title);\n  if (Array.isArray(j.images)) {\n    for (const im of j.images) {\n      pushImg(im.img_src, im.title);\n      pushImg(im.thumbnail, im.title);\n    }\n  }\n}\n\nconst seen = new Set();\nconst uniq = [];\nfor (const c of imgCandidates) {\n  const key = c.url.split(\"?\")[0];\n  if (!seen.has(key)) { seen.add(key); uniq.push(c); }\n}\n\nconst esc = (s) => String(s == null ? '' : s)\n  .replace(/&/g, '&amp;').replace(/</g, '&lt;')\n  .replace(/>/g, '&gt;').replace(/\"/g, '&quot;');\n\n// 邮件内图片一律用【原图直链】：images.weserv.nl 在本网络 ECONNRESET 不可达（收件人在国内同理）。\nlet imagesHtml = \"\";\nfor (const c of uniq) {\n  imagesHtml += `\n    <div style=\"margin:0 auto 36px;text-align:center;page-break-inside:avoid;\">\n      <img src=\"${esc(c.url)}\" alt=\"${esc(c.title)}\" style=\"max-width:100%;height:auto;border-radius:12px;box-shadow:0 6px 16px rgba(0,0,0,0.08);display:block;margin:0 auto;\">\n      <p style=\"font-size:13px;color:#888;margin-top:12px;font-style:italic;\">📍 ${esc(c.title)}</p>\n    </div>`;\n}\nif (!imagesHtml) imagesHtml = `<p style=\"color:#999;text-align:center;padding:30px;\">😕 未检索到可用配图。</p>`;\n\nconst briefSafe = (brief || \"本次未生成简报内容。\").replace(/\\n+/g, \"</p><p style=\\\"font-size:16px;line-height:1.9;color:#444;margin:0 0 18px;text-indent:2em;\\\">\");\nconst kwLine = keyword\n  ? `<p style=\"font-size:15px;line-height:1.9;color:#1a1a1a;margin:0 0 18px;text-align:justify;\"><strong>🔍 检索关键词：</strong>${esc(keyword)}</p>`\n  : '';\nconst contentHtml = `\n  <p style=\"font-size:16px;line-height:1.9;color:#444;margin:0 0 18px;text-indent:2em;\"><strong style=\"color:#1a1a1a;\">✨ 核心看点：</strong>${briefSafe}</p>\n  ${kwLine}`;\n\nconst finalHtml = `<!DOCTYPE html><html><head><meta charset=\"utf-8\"></head>\n<body style=\"font-family:'Helvetica Neue',Arial,'PingFang SC','Microsoft YaHei',sans-serif;background:#f4f6f8;padding:40px 20px;margin:0;\">\n  <div style=\"max-width:680px;margin:0 auto;background:#fff;padding:55px 40px;border-radius:16px;box-shadow:0 12px 40px rgba(0,0,0,0.05);\">\n    <h1 style=\"color:#1a1a1a;text-align:center;margin:0 0 40px;font-size:26px;\">🤖 AI 搜图报告：${esc(keyword || \"AI 自动搜图\")}</h1>\n    <div style=\"margin-bottom:40px;\">${contentHtml}</div>\n    <div style=\"border-top:1px dashed #e8e8e8;padding-top:30px;\">\n      <h3 style=\"color:#333;text-align:center;margin:0 0 30px;font-size:20px;\">📸 精选配图</h3>\n      ${imagesHtml}\n    </div>\n    <div style=\"text-align:center;margin-top:50px;font-size:12px;color:#b0b0b0;border-top:1px solid #f0f0f0;padding-top:20px;\">\n      <p>本邮件由 n8n 自动化工作流自动生成</p>\n      <p>🕒 ${new Date().toLocaleString()}</p>\n    </div>\n  </div>\n</body></html>`;\n\nconst featuredImageUrl = uniq.length > 0 ? uniq[0].url : \"\";\n\nreturn [{ json: {\n  htmlEmail: finalHtml,\n  featuredImageUrl,                       // 原图直链，供 HTTP Request2 下载\n  featuredImageWeservUrl: featuredImageUrl, // 兼容旧字段名，值同原图（代理通道已弃用）\n  hasImage: uniq.length > 0,\n  query: query || keyword || \"AI 自动搜图\",\n  brief,\n  keyword\n} }];\n"
+      },
+      "id": "fa3fe919-86a2-4913-b3e8-2fced7aff4f9",
+      "name": "Code in JavaScript3",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "executeOnce": true,
+      "position": [
+        1152,
+        -48
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=http://host.docker.internal:8090/wp-json/wp/v2/posts",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpBasicAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ title: $('Code in JavaScript3').first().json.query, content: $('Code in JavaScript3').first().json.brief, status: 'publish', featured_media: Number($('HTTP Request3').first().json.id) || 0 }) }}",
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "json"
+            }
+          }
+        }
+      },
+      "id": "a64e5712-0d92-4575-9422-abcfb1323344",
+      "name": "Create a post",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.5,
+      "position": [
+        2032,
+        -48
+      ],
+      "credentials": {
+        "httpBasicAuth": {
+          "id": "1B77FBA0C52CDDBA",
+          "name": "WP Media Upload (Basic)"
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "url": "={{ $('Code in JavaScript3').first().json.featuredImageUrl }}",
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "file"
+            }
+          }
+        }
+      },
+      "id": "793fb4c9-22a1-426c-ae2f-7311bea585cf",
+      "name": "HTTP Request2",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.5,
+      "position": [
+        1376,
+        -48
+      ],
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=http://host.docker.internal:8090/wp-json/wp/v2/media",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpBasicAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Disposition",
+              "value": "={{ 'attachment; filename=\"' + (($binary.data && $binary.data.fileName) ? String($binary.data.fileName).replace(/[^\\w.\\-]/g, '_') : 'featured.jpg') + '\"' }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "binaryData",
+        "inputDataFieldName": "data",
+        "options": {}
+      },
+      "id": "725d3f45-6dc3-4ffd-900d-d9a979d65f9a",
+      "name": "HTTP Request3",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.5,
+      "position": [
+        1600,
+        -48
+      ],
+      "credentials": {
+        "httpBasicAuth": {
+          "id": "1B77FBA0C52CDDBA",
+          "name": "WP Media Upload (Basic)"
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://open.feishu.cn/open-apis/auth/v3/tenant_access_token/internal",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "{\"app_id\": \"YOUR_FEISHU_APP_ID\", \"app_secret\": \"YOUR_FEISHU_APP_SECRET\"}",
+        "options": {}
+      },
+      "id": "26ac2475-925d-4955-bb67-a747c9946211",
+      "name": "飞书获取Token",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.5,
+      "position": [
+        2080,
+        -320
+      ],
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "https://open.feishu.cn/open-apis/drive/explorer/v2/root_folder/meta",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $('飞书获取Token').first().json.tenant_access_token }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "e845259f-2bce-469c-917f-11c144c26563",
+      "name": "飞书根目录",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.5,
+      "position": [
+        2320,
+        -320
+      ],
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://open.feishu.cn/open-apis/docx/v1/documents",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $('飞书获取Token').first().json.tenant_access_token }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ title: '简报归档 · ' + ($('飞书事件解析').first().json.chatInput||'').toString().slice(0,20), folder_token: $('飞书根目录').first().json.data.token }) }}",
+        "options": {}
+      },
+      "id": "b957d77e-883f-4242-b883-bee05afcc65b",
+      "name": "飞书建文档",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.5,
+      "position": [
+        2560,
+        -320
+      ],
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "// ↓↓↓ 公网基址：由 _diag/refresh_public_urls.py 自动维护（cpolar 域名每日可能变化）\nconst WP_PUBLIC_BASE = 'https://YOUR_CPOLAR_HOST';\nconst chatInput = ($('飞书事件解析').first().json.chatInput || '');\nconst query = ($('Code in JavaScript3').first().json.query || chatInput || '未知主题');\nconst brief = ($('Code in JavaScript3').first().json.brief || '');\nconst htmlEmail = ($('Code in JavaScript3').first().json.htmlEmail || '');\nconst wp = ($('Create a post').first().json || {});\nlet wpLink = (wp.link || '');\nif (wpLink && WP_PUBLIC_BASE) {\n  wpLink = wpLink.replace(/^https?:\\/\\/[^/]+/i, WP_PUBLIC_BASE.replace(/\\/+$/, ''));\n}\nconst plain = String(htmlEmail||'').replace(/<[^>]+>/g,' ').replace(/\\s+/g,' ').trim().slice(0,800);\nconst blocks = { children: [\n  { block_type: 2, text: { elements:[{text_run:{content:'📧 邮件主题：' + query}}], style:{} } },\n  { block_type: 2, text: { elements:[{text_run:{content:'邮件正文（摘要）：' + plain}}], style:{} } },\n  { block_type: 2, text: { elements:[{text_run:{content:'📝 WordPress 文章标题：' + query}}], style:{} } },\n  { block_type: 2, text: { elements:[{text_run:{content:'文章正文（简报）：' + String(brief||'').slice(0,2000)}}], style:{} } },\n  { block_type: 2, text: { elements:[{text_run:{content:'文章链接：' + wpLink}}], style:{} } }\n] };\nreturn [{ json: { body: blocks } }];"
+      },
+      "id": "455bc23f-701b-4556-aafa-2c959e5f0f66",
+      "name": "组装飞书文档",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2800,
+        -320
+      ],
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://open.feishu.cn/open-apis/docx/v1/documents/{{ $('飞书建文档').first().json.data.document.document_id }}/blocks/{{ $('飞书建文档').first().json.data.document.document_id }}/children",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $('飞书获取Token').first().json.tenant_access_token }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($('组装飞书文档').first().json.body) }}",
+        "options": {}
+      },
+      "id": "d57325c6-b4e5-4227-9cc0-912369160047",
+      "name": "飞书写文档内容",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.5,
+      "position": [
+        3040,
+        -320
+      ],
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "const chatInput = ($('飞书事件解析').first().json.chatInput || '');\nconst query = ($('Code in JavaScript3').first().json.query || chatInput || '未知主题');\nconst searchText = ($('Code in JavaScript').first().json.search_text || '');\nconst c3 = ($('Code in JavaScript3').first().json || {});\nconst imgs = Array.isArray(c3.images) ? c3.images : [];\nconst now = (new Date()).toISOString().slice(0,16).replace('T',' ');\nconst records = [];\nconst parts = String(searchText).split(/\\n\\s*\\n/).map(s=>s.trim()).filter(Boolean);\nfor (const p of parts.slice(0,6)) {\n  records.push({ fields: { 查询词: query, 类型:'文字结果', 标题: p.slice(0,50), 内容或链接: p.slice(0,200), 来源:'SearXNG-general', 创建时间: now } });\n}\nfor (const im of imgs.slice(0,5)) {\n  const url = im.url || im.img_src || im.thumbnail || '';\n  if (typeof url !== 'string' || !url.startsWith('http')) continue;\n  const text = (im.title ? im.title + ' ' : '') + url;\n  records.push({ fields: { 查询词: query, 类型:'图片', 标题: (im.title||'配图'), 内容或链接: text, 来源:'SearXNG-images', 创建时间: now } });\n}\nreturn [{ json: { records } }];"
+      },
+      "id": "fe6fc556-2207-4259-9ba0-eec6b13fd08f",
+      "name": "组装搜索存档",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2320,
+        -80
+      ],
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://open.feishu.cn/open-apis/bitable/v1/apps/DcIwbWWXvaPVZEs4OjZccUC4nBh/tables/tblXvtMtBCts9JC8/records/batch_create",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $('飞书获取Token').first().json.tenant_access_token }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($('组装搜索存档').first().json) }}",
+        "options": {}
+      },
+      "id": "a2a9c879-31bd-4eb5-95c7-f1ac4de6d6a9",
+      "name": "飞书写搜索表",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.5,
+      "position": [
+        2560,
+        -80
+      ],
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "method": "PATCH",
+        "url": "=https://open.feishu.cn/open-apis/drive/v1/permissions/{{ $('飞书建文档').first().json.data.document.document_id }}/public?type=docx",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $('飞书获取Token').first().json.tenant_access_token }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\"link_share_entity\":\"anyone_readable\",\"comment_entity\":\"anyone_can_view\",\"security_entity\":\"anyone_can_view\",\"share_entity\":\"anyone\",\"external_access\":true,\"invite_external\":false}",
+        "options": {
+          "timeout": 20000
+        }
+      },
+      "id": "f62ac4ab-5d55-4e11-b7aa-737d2dffcf0f",
+      "name": "设置文档权限",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.5,
+      "position": [
+        3280,
+        -320
+      ],
+      "onError": "continueRegularOutput",
+      "notes": "把文档设为「组织内获得链接的人可阅读」，否则群里其他人打不开",
+      "notesInFlow": true
+    }
+  ],
+  "connections": {
+    "Ollama Chat Model": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "MCP Client2": {
+      "ai_tool": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Simple Memory": {
+      "ai_memory": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "ai_memory",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AI Agent": {
+      "main": [
+        [
+          {
+            "node": "Code in JavaScript1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HTTP Request": {
+      "main": [
+        [
+          {
+            "node": "Code in JavaScript",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code in JavaScript": {
+      "main": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code in JavaScript1": {
+      "main": [
+        [
+          {
+            "node": "Switch",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Switch": {
+      "main": [
+        [
+          {
+            "node": "Merge",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "HTTP Request1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HTTP Request1": {
+      "main": [
+        [
+          {
+            "node": "Code in JavaScript2",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code in JavaScript2": {
+      "main": [
+        [
+          {
+            "node": "Merge",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Merge": {
+      "main": [
+        [
+          {
+            "node": "Code in JavaScript3",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code in JavaScript3": {
+      "main": [
+        [
+          {
+            "node": "HTTP Request2",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HTTP Request2": {
+      "main": [
+        [
+          {
+            "node": "HTTP Request3",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HTTP Request3": {
+      "main": [
+        [
+          {
+            "node": "Create a post",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create a post": {
+      "main": [
+        [
+          {
+            "node": "Send an Email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send an Email": {
+      "main": [
+        [
+          {
+            "node": "飞书获取Token",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "飞书获取Token": {
+      "main": [
+        [
+          {
+            "node": "飞书根目录",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "飞书根目录": {
+      "main": [
+        [
+          {
+            "node": "组装搜索存档",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "飞书建文档",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "飞书建文档": {
+      "main": [
+        [
+          {
+            "node": "组装飞书文档",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "组装飞书文档": {
+      "main": [
+        [
+          {
+            "node": "飞书写文档内容",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "组装搜索存档": {
+      "main": [
+        [
+          {
+            "node": "飞书写搜索表",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "飞书群机器人回调 Webhook": {
+      "main": [
+        [
+          {
+            "node": "飞书事件解析",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "飞书事件解析": {
+      "main": [
+        [
+          {
+            "node": "验证握手?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "验证握手?": {
+      "main": [
+        [
+          {
+            "node": "Respond 验证",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Respond 回执",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Respond 回执": {
+      "main": [
+        [
+          {
+            "node": "HTTP Request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "飞书写搜索表": {
+      "main": [
+        [
+          {
+            "node": "回发获取Token",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "回发获取Token": {
+      "main": [
+        [
+          {
+            "node": "回发下载配图",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "回发下载配图": {
+      "main": [
+        [
+          {
+            "node": "回发上传图片",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "回发上传图片": {
+      "main": [
+        [
+          {
+            "node": "组装群聊回发卡",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "组装群聊回发卡": {
+      "main": [
+        [
+          {
+            "node": "发送富文本卡片",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "飞书写文档内容": {
+      "main": [
+        [
+          {
+            "node": "设置文档权限",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "timeSavedMode": "fixed",
+    "callerPolicy": "workflowsFromSameOwner",
+    "availableInMCP": false
+  },
+  "staticData": null,
+  "meta": {
+    "templateCredsSetupCompleted": true
+  },
+  "nodeGroups": [],
+  "pinData": {},
+  "triggerCount": 1,
+  "versionMetadata": {
+    "name": null,
+    "description": null
+  }
+}

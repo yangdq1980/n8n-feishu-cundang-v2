@@ -1,0 +1,39 @@
+# ============================================================
+# 敏感 / 运行时数据（绝不入仓）
+# ============================================================
+# n8n 数据库与备份（体积大，含明文凭据与会话）
+*.sqlite
+*.sqlite3
+*.sqlite-wal
+*.sqlite-shm
+*.sqlite-journal
+backup_*.sqlite
+
+# 本地诊断/运维脚本目录（含临时凭据与数据库，整体不入仓）
+_diag/
+
+# 本地运行版工作流（含明文飞书 App Secret），仅本机部署使用。
+# 推送到 GitHub 的是脱敏版：workflow/wf8_feishu_groupbot.json
+/wf8_feishu_groupbot.json
+
+# 环境变量与本地凭据
+.env
+.env.local
+*.local.env
+
+# ============================================================
+# 系统 / 编辑器 / 依赖
+# ============================================================
+.DS_Store
+Thumbs.db
+*.log
+logs/
+node_modules/
+__pycache__/
+*.pyc
+*.pyo
+.vscode/
+.idea/
+
+# WorkBuddy 项目元数据（不纳入代码仓库；沉淀内容已整理进 docs/）
+.workbuddy/
