@@ -60,10 +60,10 @@ def build_pairs(env: dict):
 
 def main() -> int:
     if not SRC.exists():
-        print(f"[err] 找不到本地运行版工作流：{SRC}", file=sys.stderr)
+        print(f"[err] source workflow not found: {SRC}", file=sys.stderr)
         return 1
     if not ENV.exists():
-        print(f"[warn] 未找到 .env（{ENV}），将只能做无密钥替换", file=sys.stderr)
+        print(f"[warn] .env not found ({ENV}); running without secret mapping", file=sys.stderr)
 
     pairs = build_pairs(load_env(ENV))
     text = SRC.read_text(encoding="utf-8")
@@ -76,23 +76,23 @@ def main() -> int:
 
     leaked = [r for r, _ in pairs if r in text]
     if leaked:
-        print(f"[err] 脱敏后仍残留 {len(leaked)} 项敏感值", file=sys.stderr)
+        print(f"[err] {len(leaked)} sensitive value(s) still present after sanitize", file=sys.stderr)
         return 2
     try:
         json.loads(text)
     except json.JSONDecodeError as e:
-        print(f"[err] 脱敏后 JSON 解析失败：{e}", file=sys.stderr)
+        print(f"[err] sanitized JSON is invalid: {e}", file=sys.stderr)
         return 3
 
     DST.parent.mkdir(parents=True, exist_ok=True)
     DST.write_text(text, encoding="utf-8")
 
-    print(f"[ok] 脱敏完成 -> {DST}")
-    print(f"[ok] 命中 {len(hits)} 类敏感值：")
+    print(f"[ok] sanitized -> {DST}")
+    print(f"[ok] replaced {len(hits)} sensitive type(s):")
     for r in hits:
-        print(f"     - {r[:6]}***{r[-4:]}  ({len(r)} 字符)")
+        print(f"     - {r[:6]}***{r[-4:]}  ({len(r)} chars)")
     if not hits:
-        print("     (0 命中：请确认 .env 已配置真实值)")
+        print("     (0 hits: check that .env has real values)")
     return 0
 
 
