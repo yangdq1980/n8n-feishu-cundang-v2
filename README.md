@@ -78,7 +78,7 @@ n8nfeishucundangv2/
 │   ├── sanitize_workflow.py      # 把运行版工作流脱敏为可公开版
 │   └── ...                       # 运维/诊断辅助脚本
 ├── automation/
-│   ├── daily_sync.ps1            # 每日同步（脱敏 → 提交 → 推送）
+│   ├── daily_sync.sh             # 每日同步（脱敏→提交→推送，Bash）
 │   ├── install_task.ps1          # 注册 Windows 计划任务
 │   └── push_now.bat              # 手动一键同步
 └── （本地运行版 wf8_feishu_groupbot.json、*.sqlite、.env 等不入仓）
@@ -141,15 +141,18 @@ cp .env.example .env
 # 手动同步一次（脱敏 + 提交 + 推送）
 automation\push_now.bat
 
-# 注册为每日 23:30 自动运行（管理员 PowerShell 执行一次）
+# 注册为每日 23:30 自动运行（执行一次）
 powershell -ExecutionPolicy Bypass -File automation\install_task.ps1
 ```
 
-同步逻辑（`daily_sync.ps1`）：
-1. 运行 `sanitize_workflow.py` 生成脱敏版；
-2. `git add -A`；
-3. **仅当有变更时**才 `commit` + `push`（"如果更新了才同步"）；
-4. 日志写入 `logs/sync-*.log`。
+同步逻辑（`daily_sync.sh`，由计划任务调用 Git-Bash 执行）：
+1. 清理残留 `index.lock`；
+2. 运行 `sanitize_workflow.py` 生成脱敏版；
+3. `git add -A`；
+4. **仅当有变更时**才 `commit` + `push`（"如果更新了才同步"）；
+5. 日志写入 `logs/sync-*.log`。
+
+> 为何用 Bash：Windows PowerShell 5.1 在本仓库出现过 `index.lock` 与中文编码问题，Bash 版实测更稳定，故计划任务改为调用 Git-Bash。
 
 > 首次推送前需配置 git 远程与凭据：
 > ```bash
@@ -165,7 +168,7 @@ powershell -ExecutionPolicy Bypass -File automation\install_task.ps1
 | 脚本 | 作用 | 入仓 |
 |---|---|---|
 | `scripts/sanitize_workflow.py` | 运行版 → 脱敏版（从 `.env` 读真实值，校验无残留 + JSON 合法） | ✔ |
-| `automation/daily_sync.ps1` | 每日同步主脚本（脱敏→提交→推送） | ✔ |
+| `automation/daily_sync.sh` | 每日同步主脚本（脱敏→提交→推送，Bash） | ✔ |
 | `automation/install_task.ps1` | 注册 Windows 计划任务 | ✔ |
 | `automation/push_now.bat` | 手动一键同步 | ✔ |
 | 运维/诊断脚本（`_diag/`） | 刷新公网基址、修历史文档权限、E2E 校验等 | ✘ 本地环境 |
