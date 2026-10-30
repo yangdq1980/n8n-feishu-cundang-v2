@@ -1,0 +1,9 @@
+# 统一换行，避免每日同步产生无意义的 CRLF 变更
+* text=auto
+*.sh   text eol=lf
+*.py   text eol=lf
+*.js   text eol=lf
+*.md   text eol=lf
+*.json text eol=lf
+*.ps1  text eol=crlf
+*.bat  text eol=crlf

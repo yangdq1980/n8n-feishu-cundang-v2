@@ -1,5 +1,7 @@
 # n8n 飞书存档机器人（群 @ 触发 · AI 简报 · 图文归档）
 
+> **GitHub 仓库**：https://github.com/yangdq1980/n8n-feishu-cundang-v2
+>
 > 在飞书群里 `@机器人 <任意主题>`，自动完成：**联网搜索 → AI 生成 ~2000 字简报 → 抓取配图 → 发邮件 → 发 WordPress → 建飞书文档并开放权限 → 写入飞书多维表格 → 群内回发图文卡片**。
 >
 > 本项目是完整的 n8n 工作流 + 部署/运维脚本 + 说明文档，可直接导入 n8n 复现。
@@ -151,9 +153,10 @@ powershell -ExecutionPolicy Bypass -File automation\install_task.ps1
 
 > 首次推送前需配置 git 远程与凭据：
 > ```bash
-> git remote add origin https://github.com/<你的用户名>/<仓库名>.git
+> git remote add origin https://github.com/yangdq1980/n8n-feishu-cundang-v2.git
 > git push -u origin main   # 用 PAT 或已登录的凭据助手
 > ```
+> （本仓库已配置好远程并完成首次推送，日常直接用上面的 `push_now.bat` / 计划任务即可。）
 
 ---
 
