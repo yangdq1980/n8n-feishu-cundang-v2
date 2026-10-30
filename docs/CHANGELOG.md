@@ -57,6 +57,33 @@
 - **简报字数 3000 → 2000**：AI Agent 提示词每节下限 450 → 300 字；Ollama `numPredict` 6144 → 4096
 - **配图链路**：SearXNG `categories=images` 按 AI 关键词取图
 
+## [2026-10-30] 搜索质量改造（P0 致命修复）
+
+详见 `docs/CONTENT_QUALITY_REPORT.md`。
+
+### 修复
+- **搜索链路从未生效（P0）**：searxng general 引擎 100% 返回 0 条
+  （baidu/quark CAPTCHA 封禁、sogou 代码异常、google/wikipedia 超时、bing 解析失效），
+  导致历史所有简报均为模型凭记忆编造。改为 **Bing 直连**（HTTP Request + Code 解析 HTML）。
+- **Bing 跳转壳链接**：结果 URL 多为 `bing.com/ck/a?...&u=a1<base64url>`，
+  不还原会导致所有来源指向 bing 自己 → 加 base64url 解码。
+- **n8n Code 沙箱 `new URL()` 不可用**：域名统计改正则提取。
+
+### 新增
+- **多候选查询 + 相关性自动择优**：首轮用主题原文搜，按「主题 2-gram」重叠率打分；
+  < 0.15 判定跑题 → 自动生成候选词（短词优先）重搜并取最优。
+  实测：「固态电池产业化与装车进度」自动收窄为「固态电池」，相关性 0.09 → 0.27。
+- **提示词重写**：强制 `[n]` 来源标注、禁止编造、结构改 Markdown `##`、配图关键词质量约束。
+- `scripts/patch_search_quality.py`：幂等补丁脚本
+- `docs/CONTENT_QUALITY_REPORT.md`：诊断报告 + 运维手册
+
+### 实测效果（execId 6304 / 6305）
+| 指标 | 改造前 | 改造后 |
+|---|---|---|
+| 素材条数 | 0 | 10 |
+| `##` 二级标题 | 0 | 6 |
+| 来源标注 `[n]` | 0 | 19–24 |
+
 ### 修复
 - **飞书文档"无权限"（根因=双 App 混乱）**：
   - `飞书获取Token` 硬编码旧 App `cli_aa35ca...`（显示名"n8n测试连接"），而回发链路用新 App → 文档 owner 属旧 App，跨 App 无权限

@@ -4,6 +4,8 @@
 >
 > 本文按**真实执行顺序**逐节点拆解：它是什么、参数每个选项干什么、上游给什么、下游要什么、牵动哪个第三方系统、背后是什么机理、哪里容易踩坑。所有代码带中文注释。
 
+
+
 ---
 
 ## 目录
@@ -40,34 +42,34 @@ n8n 的节点面板看起来很简单，但真跑起来会撞上一堆"看不出
 
 本文对每个节点回答六件事：
 
-| 维度 | 说明 |
-|---|---|
-| **定位** | 编号、节点类型、typeVersion、节点 ID |
-| **它做什么** | 一句话职责 + 在业务上的意义 |
-| **参数逐项** | 每个配置项的含义、可选值、改了会怎样 |
-| **上下游契约** | 上游给的 JSON 长什么样，下游期待什么 |
-| **技术机理** | 协议层/框架层发生了什么 |
-| **坑与经验** | 实测踩过的坑及规避方式 |
+| 维度        | 说明                        |
+| --------- | ------------------------- |
+| **定位**    | 编号、节点类型、typeVersion、节点 ID |
+| **它做什么**  | 一句话职责 + 在业务上的意义           |
+| **参数逐项**  | 每个配置项的含义、可选值、改了会怎样        |
+| **上下游契约** | 上游给的 JSON 长什么样，下游期待什么     |
+| **技术机理**  | 协议层/框架层发生了什么              |
+| **坑与经验**  | 实测踩过的坑及规避方式               |
 
 ### 0.2 术语约定
 
-| 术语 | 含义 |
-|---|---|
-| **item** | n8n 的数据单元，形如 `{ json: {...}, binary: {...} }`。一个节点收到 N 个 item 就执行 N 次（除非开 `executeOnce`） |
-| **paired item** | n8n 为每个输出 item 记录的"它来自哪个输入 item"，用于 `$('上游节点').item` 定位 |
-| **runData** | 一次执行里各节点的输入输出快照，存在 `execution_data` 表（用 flatted 压缩） |
-| **tenant_access_token** | 飞书自建应用的"应用身份"凭证，2 小时有效，权限 = 应用被授予的权限 |
-| **owner** | 飞书文档/多维表格的属主。**谁创建就归谁**，跨应用默认无权访问 |
+| 术语                      | 含义                                                                                       |
+| ----------------------- | ---------------------------------------------------------------------------------------- |
+| **item**                | n8n 的数据单元，形如 `{ json: {...}, binary: {...} }`。一个节点收到 N 个 item 就执行 N 次（除非开 `executeOnce`） |
+| **paired item**         | n8n 为每个输出 item 记录的"它来自哪个输入 item"，用于 `$('上游节点').item` 定位                                  |
+| **runData**             | 一次执行里各节点的输入输出快照，存在 `execution_data` 表（用 flatted 压缩）                                      |
+| **tenant_access_token** | 飞书自建应用的"应用身份"凭证，2 小时有效，权限 = 应用被授予的权限                                                     |
+| **owner**               | 飞书文档/多维表格的属主。**谁创建就归谁**，跨应用默认无权访问                                                        |
 
 ### 0.3 版本基线
 
-| 组件 | 版本/取值 |
-|---|---|
-| n8n | 自带 `n8n-nodes-base` + `@n8n/n8n-nodes-langchain` |
-| Webhook / Code / HTTP Request | typeVersion 2 / 2 / 4.5 |
-| AI Agent | typeVersion 3.1 |
-| Ollama 模型 | `qwen3:8b`（temperature 0.4，numCtx 16384，numPredict 4096） |
-| 工作流节点数 | 35 |
+| 组件                            | 版本/取值                                                    |
+| ----------------------------- | -------------------------------------------------------- |
+| n8n                           | 自带 `n8n-nodes-base` + `@n8n/n8n-nodes-langchain`         |
+| Webhook / Code / HTTP Request | typeVersion 2 / 2 / 4.5                                  |
+| AI Agent                      | typeVersion 3.1                                          |
+| Ollama 模型                     | `qwen3:8b`（temperature 0.4，numCtx 16384，numPredict 4096） |
+| 工作流节点数                        | 35                                                       |
 
 ---
 
@@ -75,7 +77,7 @@ n8n 的节点面板看起来很简单，但真跑起来会撞上一堆"看不出
 
 ### 1.1 一句话说明
 
-**输入**：飞书群里一条 @机器人的文字消息（任意主题）。
+**输入**：飞书群里一条 @机器人的文字消息（任意主题）。  
 **输出**：7 个落地物 —— ①群内图文卡片 ②飞书云文档 ③飞书多维表格记录 ④WordPress 文章 ⑤WordPress 特色图 ⑥HTML 邮件 ⑦（可选）MCP 侧文件。
 
 ### 1.2 端到端数据流
@@ -150,28 +152,28 @@ n8n 的节点面板看起来很简单，但真跑起来会撞上一堆"看不出
 
 ### 1.3 九个阶段一览
 
-| 阶段 | 节点 | 干什么 | 失败影响 |
-|---|---|---|---|
-| ① 事件接入 | 01–05 | 收飞书事件、校验、先回执 | 全链路不通 |
-| ② 联网检索 | 06–07 | searxng 搜网页，拼成素材文本 | 简报无事实依据 |
-| ③ AI 生成 | 08 + 33/34/35 | LLM 写 2000 字 JSON 简报 | 无内容可发 |
-| ④ 结构化解析 | 09 | 拆出 `brief` 和 `image_keywords` | 后续全部拿不到字段 |
-| ⑤ 配图 | 10 / 31 / 32 / 11 / 12 | 每关键词搜 3 张，汇总配额 | 无图（业务仍可继续） |
-| ⑥ 多端发布 | 13–16 | WP 特色图 + WP 文章 + 邮件 | 单点失败不阻断（已设 continue） |
-| ⑦ 飞书归档 | 17–20 / 27–30 | 多维表格 + 云文档 + 权限 | 归档缺失 |
-| ⑧ 群回发 | 21–26 | 上传图 + 发图文卡片 | 群里无反馈 |
-| ⑨ 收尾 | — | 执行结束，清理 | — |
+| 阶段      | 节点                     | 干什么                           | 失败影响                 |
+| ------- | ---------------------- | ----------------------------- | -------------------- |
+| ① 事件接入  | 01–05                  | 收飞书事件、校验、先回执                  | 全链路不通                |
+| ② 联网检索  | 06–07                  | searxng 搜网页，拼成素材文本            | 简报无事实依据              |
+| ③ AI 生成 | 08 + 33/34/35          | LLM 写 2000 字 JSON 简报          | 无内容可发                |
+| ④ 结构化解析 | 09                     | 拆出 `brief` 和 `image_keywords` | 后续全部拿不到字段            |
+| ⑤ 配图    | 10 / 31 / 32 / 11 / 12 | 每关键词搜 3 张，汇总配额                | 无图（业务仍可继续）           |
+| ⑥ 多端发布  | 13–16                  | WP 特色图 + WP 文章 + 邮件           | 单点失败不阻断（已设 continue） |
+| ⑦ 飞书归档  | 17–20 / 27–30          | 多维表格 + 云文档 + 权限               | 归档缺失                 |
+| ⑧ 群回发   | 21–26                  | 上传图 + 发图文卡片                   | 群里无反馈                |
+| ⑨ 收尾    | —                      | 执行结束，清理                       | —                    |
 
 ### 1.4 外部依赖清单
 
-| 系统 | 地址（示例） | 用途 | 关键约束 |
-|---|---|---|---|
-| 飞书开放平台 | `open.feishu.cn` | 事件订阅 / 文档 / 多维表格 / 消息 | 需自建应用 + 权限 + 事件订阅 |
-| searxng | `http://searxng:8080` | 元搜索（网页 + 图片） | 需在 n8n 容器同网络 |
-| Ollama | n8n 内配置的 baseUrl | 本地 LLM 推理 | `qwen3:8b` 显存约 6–8GB |
-| WordPress | `http://host.docker.internal:8090` | 文章 + 媒体库 | 需 Application Password |
-| MCP 文件服务 | `http://host.docker.internal:3001` | Agent 可调工具 | 挂了不影响主链路 |
-| SMTP | 163 邮箱 | 发 HTML 邮件 | 需授权码 |
+| 系统        | 地址（示例）                             | 用途                    | 关键约束                   |
+| --------- | ---------------------------------- | --------------------- | ---------------------- |
+| 飞书开放平台    | `open.feishu.cn`                   | 事件订阅 / 文档 / 多维表格 / 消息 | 需自建应用 + 权限 + 事件订阅      |
+| searxng   | `http://searxng:8080`              | 元搜索（网页 + 图片）          | 需在 n8n 容器同网络           |
+| Ollama    | n8n 内配置的 baseUrl                   | 本地 LLM 推理             | `qwen3:8b` 显存约 6–8GB   |
+| WordPress | `http://host.docker.internal:8090` | 文章 + 媒体库              | 需 Application Password |
+| MCP 文件服务  | `http://host.docker.internal:3001` | Agent 可调工具            | 挂了不影响主链路               |
+| SMTP      | 163 邮箱                             | 发 HTML 邮件             | 需授权码                   |
 
 > **`host.docker.internal` 是什么**：Docker 容器内访问**宿主机**的保留域名（Docker Desktop 内置 DNS）。因为 WordPress/MCP 跑在宿主机或另一个容器，而 n8n 在容器里，用 `localhost` 会指向容器自己，必须用这个域名。Linux 下需要在 `docker run` 时加 `--add-host=host.docker.internal:host-gateway`。
 
@@ -193,16 +195,17 @@ n8n 的节点面板看起来很简单，但真跑起来会撞上一堆"看不出
 
 **必须开通的权限**（权限管理 → API 权限）：
 
-| 权限码 | 用途 | 对应节点 |
-|---|---|---|
-| `im:message` | 发消息 | 26 |
-| `im:resource`（上传图片） | `im/v1/images` | 24 |
-| `docx:document` | 建文档、写内容 | 27 / 29 |
-| `drive:drive` | 根目录、权限设置 | 18 / 30 |
-| `bitable:app` | 多维表格写入 | 20 |
-| `im:message.group_msg`（可选） | 读群消息（**本文验证时未开通**） | 调试用 |
+| 权限码                        | 用途                 | 对应节点    |
+| -------------------------- | ------------------ | ------- |
+| `im:message`               | 发消息                | 26      |
+| `im:resource`（上传图片）        | `im/v1/images`     | 24      |
+| `docx:document`            | 建文档、写内容            | 27 / 29 |
+| `drive:drive`              | 根目录、权限设置           | 18 / 30 |
+| `bitable:app`              | 多维表格写入             | 20      |
+| `im:message.group_msg`（可选） | 读群消息（**本文验证时未开通**） | 调试用     |
 
 **事件订阅**：
+
 - 订阅方式选「**将事件发送至开发者服务器**」
 - 请求地址：`https://<公网域名>/webhook/feishu-bot-callback`
 - 添加事件：`im.message.receive_v1`（接收消息）
@@ -210,12 +213,13 @@ n8n 的节点面板看起来很简单，但真跑起来会撞上一堆"看不出
 
 **发布**：改完权限/事件必须**创建版本并发布**，否则不生效。
 
-> ⚠️ **头号坑：双 App 混乱**
+> ⚠️ **头号坑：双 App 混乱**  
 > 文档/多维表格的 owner 是"创建它的那个 App"。如果你早期用 App-A 建过文档，后来换成 App-B，那么：
+>
 > - App-B 的 `tenant_access_token` 去改 App-A 的文档权限 → **一律 `permission denied`**
 > - 群里用户点开文档 → **无权限**
 >
-> 判别方法：看 token 前缀。不同 App 换出来的 token 前缀不同（形如 `t-g104au7S****A` 与 `t-g104au7S****B`：前 9 位相同、尾部不同）。
+> 判别方法：看 token 前缀。不同 App 换出来的 token 前缀不同（形如 `t-g104au7S****A` 与 `t-g104au7S****B`：前 9 位相同、尾部不同）。  
 > 解决：**全链路统一同一个 App**。本工作流中 `17 飞书获取Token`、`21 回发获取Token`、`30 设置文档权限` 必须用同一套 `app_id/app_secret`。
 
 ### 2.3 searxng
@@ -265,13 +269,15 @@ OLD_FEISHU_APP_SECRET=yyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy
 N8N_BASE_URL=http://localhost:5678
 ```
 
-| 占位符 | 出现位置 | 说明 |
-|---|---|---|
-| `YOUR_FEISHU_APP_ID` | 17 / 21 节点 jsonBody | 新 App ID |
-| `YOUR_FEISHU_APP_SECRET` | 17 / 21 节点 jsonBody | 新 App Secret |
-| `YOUR_FEISHU_CHAT_ID` | 25 节点兜底 chat_id | 群 ID |
-| `YOUR_WP_PUBLIC_BASE` | 25 节点公网基址 | cpolar 域名 |
-| `YOUR_OLD_FEISHU_APP_ID/SECRET` | 仅用于修历史文档 | 旧 App |
+| 占位符                             | 出现位置                | 说明           |
+| ------------------------------- | ------------------- | ------------ |
+| `YOUR_FEISHU_APP_ID`            | 17 / 21 节点 jsonBody | 新 App ID     |
+| `YOUR_FEISHU_APP_SECRET`        | 17 / 21 节点 jsonBody | 新 App Secret |
+| `YOUR_FEISHU_CHAT_ID`           | 25 节点兜底 chat_id     | 群 ID         |
+| `YOUR_WP_PUBLIC_BASE`           | 25 节点公网基址           | cpolar 域名    |
+| `YOUR_OLD_FEISHU_APP_ID/SECRET` | 仅用于修历史文档            | 旧 App        |
+
+
 
 ---
 
@@ -641,6 +647,7 @@ return [{
 - 上游：`07 Code in JavaScript` → `{query, search_text, noMaterial, hitCount, sessionId}`
 - 下游：`09 Code in JavaScript1`
 - 输出：LangChain Agent 的返回对象，正文在 `json.text`（也可能是 `output` / `content` / `message.content`，视版本而定，所以 09 号节点做了四路兼容）
+
 
 **技术机理**
 `AI Agent` 与普通 LLM 节点的区别：它会**自主决定是否调用工具**（ReAct 循环）。本流程挂了 `MCP Client2`，理论上 Agent 可以主动去调 MCP 工具（如读文件、查数据库）。但当前提示词要求"只输出 JSON"，实测 Agent 基本不调工具，纯靠 Ollama 生成。
@@ -1012,6 +1019,7 @@ $input.all().forEach((it, idx) => {
 return out.length ? out : [{ json: { type: 'image_result', keyword: '', kwIndex: 0, count: 0, images: [] } }];
 ```
 
+
 **为什么要挑 6 张而只展示 3 张？**
 
 因为图片直链**会失效**。实测 6 张里平均有 0–1 张下载失败（403 / SSL / 超时）。多挑几张留冗余，Code3 再按"每词 3 张"截断——这样即使坏掉 1 张，最终仍能凑够。
@@ -1375,6 +1383,7 @@ n8n 的 item 有 `json` 和 `binary` 两部分。`responseFormat: file` 时二�
 | URL | 固定端点，`/internal` 表示"企业内部应用" |
 | Body（JSON） | `app_id` + `app_secret`。**这是全流程唯一放密钥的地方**（脱敏脚本会把它换成 `YOUR_FEISHU_APP_ID`） |
 | onError | `continueRegularOutput`：token 拿不到时后续会失败，但不阻断已完成的邮件/WP 发布 |
+
 
 **返回结构**
 
@@ -1767,6 +1776,7 @@ return urls.map((u, i) => ({
 }));
 ```
 
+
 **为什么不能"不拆"？**
 
 n8n 的 HTTP 节点是**逐 item 执行**的。如果给它一条"含 6 个 URL 的 item"，它只会发 1 个请求（且 URL 表达式取不到）。必须拆成 6 条 item，才有 6 次请求。
@@ -2128,6 +2138,8 @@ docker exec n8nwp-n8n node /tmp/q_multiimg.js 6279
 | WordPress 特色图 | 文章没封面 | `featured_media: 0` |
 
 **建议**：生产环境加一个"每日巡检"，用 `execution_entity` 里 `status='success'` 但关键指标不达标的记录做告警（见附录 D）。
+
+
 
 ---
 

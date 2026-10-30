@@ -229,7 +229,7 @@
     {
       "parameters": {
         "promptType": "define",
-        "text": "=你是资深产业分析师。请基于下面的检索素材，写一份中文深度简报。\n\n硬性要求：\n1. 必须分为 6 个小节，每个小节以【】包裹的中文小标题开头，每节正文不少于 300 字，整体正文约 2000 字。\n2. 每节要有具体数据、机构/公司名称或时间点，禁止空话套话。\n3. 不写\"总结\"\"结语\"类收尾段落，写满第 6 节即结束。\n4. 最后提炼 2 个适合配图的中文关键词。\n\n输出格式必须是严格 JSON，不要 markdown 代码块，不要任何解释文字：\n{\"brief\": \"简报正文（含【】小标题，用\\\\n换行）\", \"image_keywords\": [\"关键词1\", \"关键词2\"]}\n\n检索素材：\n{{ $json.search_text }}",
+        "text": "=你是资深产业分析师。请基于下面的【检索素材】写一份中文深度简报。\n\n## 素材使用规则（最高优先级，违反即为失败）\n1. 简报中每一个具体数字、年份、百分比、机构/公司名称，必须能在检索素材中找到对应依据，并在该句末尾用 [n] 标注来源编号（n 为素材条目的编号）。\n2. 素材中没有的数据一律禁止编造。需要表达趋势时改用定性描述（如「多数厂商」「整体呈上升态势」），或明确写「当前公开数据有限」。\n3. 严禁出现素材中不存在的公司名、产品名、研究报告名、人名。\n\n## 结构要求\n1. 使用 Markdown 二级标题（## ）分为 6 个小节。\n2. 每节正文不少于 300 字，整体正文约 2000 字。\n3. 每节至少标注 2 处 [n] 来源。\n4. 不写「总结」「结语」类收尾段落，写满第 6 节即结束。\n\n## 配图关键词（重要）\n提炼 2 个中文关键词，用于后续图片检索，要求：\n- 第 1 个 = 用户主题本身或其核心实体（如「人形机器人」），必须是名词实体；\n- 第 2 个 = 该主题的具象细分（具体产品、应用场景或技术名词，如「工业机械臂」）；\n- 禁止使用「概念图」「示意图」「图片」「素材」等无法检索出实拍图的泛词。\n\n## 输出格式\n必须是严格 JSON，不要 markdown 代码块，不要任何解释文字：\n{\"brief\": \"简报正文（Markdown 格式，小节用 ## 标题，段落间用\\n换行）\", \"image_keywords\": [\"关键词1\", \"关键词2\"]}\n\n## 检索素材\n{{ $json.search_text }}\n",
         "options": {}
       },
       "id": "7d1ece3b-c360-466d-b681-e45a3ed82418",
@@ -325,30 +325,38 @@
     },
     {
       "parameters": {
-        "url": "http://searxng:8080/search",
+        "url": "=https://cn.bing.com/search?q={{ encodeURIComponent($json.chatInput) }}&setlang=zh-CN&ensearch=0&count=20",
         "sendQuery": true,
-        "queryParameters": {
+        "options": {
+          "timeout": 25000,
+          "response": {
+            "response": {
+              "responseFormat": "text"
+            }
+          },
+          "redirect": {
+            "redirect": {
+              "followRedirects": true,
+              "maxRedirects": 5
+            }
+          }
+        },
+        "sendHeaders": true,
+        "headerParameters": {
           "parameters": [
             {
-              "name": "q",
-              "value": "={{ $json.chatInput }}"
+              "name": "User-Agent",
+              "value": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
             },
             {
-              "name": "format",
-              "value": "json"
+              "name": "Accept-Language",
+              "value": "zh-CN,zh;q=0.9"
             },
             {
-              "name": "language",
-              "value": "zh-CN"
-            },
-            {
-              "name": "categories",
-              "value": "general"
+              "name": "Accept",
+              "value": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8"
             }
           ]
-        },
-        "options": {
-          "timeout": 20000
         }
       },
       "id": "6d62f73a-9cb3-4025-97ff-0654f56dc00f",
@@ -361,11 +369,13 @@
       ],
       "retryOnFail": true,
       "maxTries": 2,
-      "waitBetweenTries": 1500
+      "waitBetweenTries": 1500,
+      "onError": "continueRegularOutput",
+      "notes": "直接抓 Bing 结果页（searxng general 引擎已失效）；返回 HTML 由下游 Code 解析"
     },
     {
       "parameters": {
-        "jsCode": "\n// 把 searxng 的网页检索结果拼成给 LLM 的素材文本\nconst data = $input.first().json;\nconst list = Array.isArray(data.results) ? data.results : [];\n\nconst text = list.slice(0, 6).map((r, i) =>\n  `【${i + 1}】${r.title || '无标题'}\\n链接：${r.url || ''}\\n摘要：${r.content || '（无摘要）'}`\n).join('\\n\\n');\n\nconst trig = $('飞书事件解析').first().json;\n\n// 【重要】检索为空的兜底\n// 实测：searxng 上游引擎偶发限流会返回 0 条。若不提示，LLM 会凭空编造与主题无关的内容。\n// 这里显式给出「素材不足」信号，让模型只基于主题本身作答，并把标记透传给下游（配图改用主题兜底）。\nconst noMaterial = text.length === 0;\nconst searchText = noMaterial\n  ? `（本次联网检索未返回任何结果，主题为「${trig.chatInput}」。请仅依据该主题的通识知识撰写，禁止编造具体数据、机构名称与时间点；无法确认的内容一律使用定性描述。）`\n  : text;\n\nreturn [{\n  json: {\n    query: trig.chatInput,\n    search_text: searchText,\n    noMaterial,\n    hitCount: list.length,\n    sessionId: trig.chat_id || 'feishu-group'\n  }\n}];\n"
+        "jsCode": "\n// ============================================================\n// Bing 搜索结果解析 + 相关性择优\n//\n// 背景一：searxng 的 general 引擎在当前环境已全部失效\n//         （baidu/quark 被 CAPTCHA 拦截、sogou 解析异常、bing 解析器返回 0 条），\n//         导致上游 search_text 恒为空，LLM 只能凭训练记忆编造内容。\n//         因此改为直接抓 Bing 页面并在此解析。\n//\n// 背景二（关键）：Bing 中文检索对「长查询」会做宽松 OR 匹配，短的高频词\n//         会压过完整词，导致严重跑题。实测：\n//           查「固态电池产业化与装车进度」 -> 返回的却是「固态硬盘」\n//           查「人形机器人产业化进展」     -> 返回的却是「人形娃娃/公仔」\n//         而查核心词「人形机器人」则 10/10 全部相关。\n//         因此这里用「多个候选查询词并发检索 + 相关性打分」自动择优。\n// ============================================================\n\nconst UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36';\n\n// n8n 的 responseFormat=text 会把响应体放进 $json.data（不同版本可能在 body/text）\n// 上游开启 continueRegularOutput，失败时也会往下传，因此这里必须做空值保护\nlet html = '';\ntry {\n  const first = $input.first();\n  const raw = (first && first.json) || {};\n  html = String(raw.data || raw.body || raw.text || raw.html || '');\n} catch (e) {\n  html = '';\n}\n\n// ---------------------------------------------------------------- 工具函数 --\nfunction stripTags(s) {\n  return String(s == null ? '' : s)\n    .replace(/<script[\\s\\S]*?<\\/script>/gi, '')\n    .replace(/<style[\\s\\S]*?<\\/style>/gi, '')\n    .replace(/<[^>]+>/g, '')\n    .replace(/&nbsp;/g, ' ')\n    .replace(/&amp;/g, '&')\n    .replace(/&lt;/g, '<')\n    .replace(/&gt;/g, '>')\n    .replace(/&quot;/g, '\"')\n    .replace(/&#39;/g, \"'\")\n    .replace(/\\s+/g, ' ')\n    .trim();\n}\n\n// Bing 的结果链接常包一层跳转壳：https://www.bing.com/ck/a?...&u=a1<base64url>\n// 不还原会导致所有链接都指向 bing 自己，简报里出现一堆无效来源。\nfunction decodeBingHref(href) {\n  if (!href) return '';\n  if (href.indexOf('/ck/a?') === -1) return href;\n  const m = href.match(/[?&]u=([^&]+)/);\n  if (!m) return href;\n  let v = decodeURIComponent(m[1]);\n  if (v.indexOf('a1') === 0) v = v.slice(2);\n  try {\n    // Node 环境：用 Buffer 做 base64url 解码\n    const pad = v + '='.repeat((4 - (v.length % 4)) % 4);\n    return Buffer.from(pad, 'base64').toString('utf8');\n  } catch (e) {\n    try {\n      return atob(v.replace(/-/g, '+').replace(/_/g, '/'));\n    } catch (e2) {\n      return href;\n    }\n  }\n}\n\n// -------------------------------------------------------- 提取 b_algo 条目 --\nfunction parseBing(htmlText) {\n  const out = [];\n  if (!htmlText) return out;\n  // 每个结果项形如 <li class=\"b_algo ...\"> ... </li>\n  const blocks = String(htmlText).split(/<li[^>]*class=\"[^\"]*b_algo/).slice(1);\n\n  for (const b of blocks) {\n    if (out.length >= 12) break;                 // 最多取 12 条，够用且避免素材过长\n    const seg = b.slice(0, 6000);                // 单条截断，避免正则在大段 HTML 上回溯\n\n    const hm = seg.match(/<h2[^>]*>\\s*<a[^>]+href=\"([^\"]+)\"[^>]*>([\\s\\S]*?)<\\/a>/i);\n    if (!hm) continue;\n\n    const u = decodeBingHref(hm[1]);\n    const t = stripTags(hm[2]);\n    if (!u || !t) continue;\n    if (u.indexOf('bing.com') !== -1) continue;  // 丢弃仍在 bing 站内的链接\n\n    // 摘要：b_algo 内第一个 <p>\n    const pm = seg.match(/<p[^>]*>([\\s\\S]*?)<\\/p>/i);\n    out.push({ title: t, url: u, content: pm ? stripTags(pm[1]) : '' });\n  }\n  return out;\n}\n\n// ------------------------------------------------- 候选查询词 + 相关性打分 --\n// 生成候选：切分片段 + 逐步缩短的前缀。\n// 原理：Bing 对长查询会退化，越接近「核心实体词」召回越准，因此要试多个粒度。\n// 实测关键：查「固态电池」完全正确，查「固态电池 产业化」却全变成「固态硬盘」；\n//           所以短词必须保留（曾经因为截断把最关键的 4 字核心词砍掉而失效）。\nfunction genCandidates(topic) {\n  const t = String(topic || '').trim();\n  if (!t) return [];\n  const set = new Set();\n  const push = function (x) {\n    x = String(x || '').trim();\n    if (x.length >= 2) set.add(x);\n  };\n\n  // 按空格与中英文标点切分（切出来的片段常就是核心实体）\n  const parts = t.split(/[\\s,，。;；、:：\\-—_/|]+/).filter(function (x) { return x.length >= 2; });\n  parts.sort(function (a, b) { return b.length - a.length; });\n  parts.forEach(push);\n\n  // 前缀切片：从长到短都要覆盖到，尤其要覆盖 4 字左右的核心词\n  for (const n of [10, 8, 6, 5, 4, 3]) {\n    if (t.length > n) push(t.slice(0, n));\n  }\n\n  // 原句已在首轮搜过，这里排除，避免重复请求\n  const arr = Array.from(set).filter(function (x) { return x !== t; });\n\n  // 短词优先：实测短核心词召回质量显著高于长查询，先试可更快命中并提前退出\n  arr.sort(function (a, b) { return a.length - b.length; });\n  return arr.slice(0, 6);\n}\n\n// 相关性打分：用「主题 2-gram」与「标题+摘要」的重叠率。\n// 比单字匹配更严格，能区分「固态电池」与「固态硬盘」这种一字之差。\nfunction relevanceScore(items, topic) {\n  const t = String(topic || '').replace(/[\\s,，。;；、:：\\-—_/|]+/g, '');\n  if (!t || !items.length) return 0;\n  const grams = [];\n  for (let i = 0; i < t.length - 1; i++) grams.push(t.slice(i, i + 2));\n  if (!grams.length) return 0;\n\n  let total = 0;\n  const top = items.slice(0, 6);\n  for (const it of top) {\n    const txt = String(it.title || '') + ' ' + String(it.content || '');\n    let hit = 0;\n    for (const g of grams) {\n      if (txt.indexOf(g) !== -1) hit++;\n    }\n    total += hit / grams.length;\n  }\n  return total / top.length;   // 0~1，越高越相关\n}\n\n// --------------------------------------------------------------- 主流程 --\nconst topic0 = (function () {\n  try { return $('飞书事件解析').first().json.chatInput || ''; } catch (e) { return ''; }\n})();\n\nlet items = parseBing(html);\nlet usedQuery = '';\ntry { usedQuery = $input.first().json.query || ''; } catch (e) {}\n\nlet bestScore = relevanceScore(items, topic0);\n\n// 首轮结果相关性太差（<0.15）时，用候选词重新检索并择优。\n// 阈值说明：实测跑题素材（固态硬盘 vs 固态电池）得分约 0.02~0.08，\n//          相关素材普遍 > 0.25，因此 0.15 是安全的分界线。\nif (topic0 && bestScore < 0.15) {\n  const cands = genCandidates(topic0);\n  for (const q of cands) {\n    if (q === usedQuery) continue;\n    let html2 = '';\n    try {\n      // n8n Code 节点内置的 HTTP helper（无需在画布上额外加节点）\n      const resp = await this.helpers.httpRequest({\n        method: 'GET',\n        url: 'https://cn.bing.com/search',\n        qs: { q: q, setlang: 'zh-CN' },\n        headers: {\n          'User-Agent': UA,\n          'Accept-Language': 'zh-CN,zh;q=0.9',\n          'Accept': 'text/html,application/xhtml+xml,*/*;q=0.8'\n        },\n        timeout: 15000\n      });\n      html2 = typeof resp === 'string' ? resp : (resp && (resp.body || resp.data)) || '';\n    } catch (e) {\n      continue;                                  // 单个候选失败不影响整体\n    }\n    const cand = parseBing(String(html2));\n    if (!cand.length) continue;\n    const s = relevanceScore(cand, topic0);\n    if (s > bestScore) {\n      bestScore = s;\n      items = cand;\n      usedQuery = q;\n    }\n    if (bestScore > 0.4) break;                  // 已经足够好，提前结束省时间\n  }\n}\n\n// ------------------------------------------------------------- 组装素材文本 --\nconst text = items\n  .map(function (r, i) {\n    return '【' + (i + 1) + '】' + r.title +\n      '\\n链接：' + r.url +\n      '\\n摘要：' + (r.content || '（无摘要）');\n  })\n  .join('\\n\\n');\n\n// 事件解析节点理论上必存在，仍加保护避免整条链路因异常中断\nlet trig = {};\ntry {\n  trig = $('飞书事件解析').first().json || {};\n} catch (e) {\n  trig = {};\n}\nconst topic = trig.chatInput || '未知主题';\n\n// 检索为空的兜底：明确告知 LLM 没有素材，禁止编造具体数据\nconst noMaterial = items.length === 0;\n// 三档素材质量：\n//   A. 一条都没有        -> 明确告知无素材\n//   B. 有但相关性过低    -> 告知素材可能跑题，允许参考但不得照抄\n//   C. 正常              -> 直接使用\nconst LOW_RELEVANCE = 0.15;\nlet searchText;\nif (noMaterial) {\n  searchText = '（本次联网检索未返回任何结果，主题为「' + topic +\n    '」。请仅依据该主题的通识知识撰写：禁止编造具体数据、机构名称与时间点；' +\n    '无法确认的内容一律使用定性描述，并在文中说明\"当前未检索到公开数据源\"。）';\n} else if (bestScore < LOW_RELEVANCE) {\n  searchText = '（注意：以下检索素材与主题「' + topic + '」的相关性很低（得分 ' +\n    Math.round(bestScore * 100) / 100 + '），可能已经跑题。' +\n    '你可以参考其中的通识表述，但严禁照抄与主题无关的内容，' +\n    '也不要把素材里的其他领域数据写进简报。' +\n    '如素材确实无用，请直接基于主题本身的通识知识撰写，并避免编造具体数据。）\\n\\n' + text;\n} else {\n  searchText = text;\n}\n\n// 域名分布（便于事后核查素材质量）\n// 注意：n8n Code 沙箱里 new URL() 不可用（实测抛异常导致结果为空），改用正则提取\nconst domains = {};\nfor (const r of items) {\n  const m = String(r.url || '').match(/^https?:\\/\\/([^/?#]+)/i);\n  if (!m) continue;\n  const h = m[1].replace(/^www\\./, '');\n  domains[h] = (domains[h] || 0) + 1;\n}\n\nreturn [{\n  json: {\n    query: topic,\n    searchQuery: usedQuery,                      // 实际用于检索的查询词（可能已自动收窄）\n    relevance: Math.round(bestScore * 100) / 100, // 素材与主题的相关性得分，便于事后核查\n    search_text: searchText,\n    noMaterial: noMaterial,\n    hitCount: items.length,\n    domains: Object.keys(domains).join(', '),\n    sources: items,                              // 结构化来源，供下游（邮件/文档）可选引用\n    sessionId: trig.chat_id || 'feishu-group'\n  }\n}];\n"
       },
       "id": "afee8663-07f5-4add-a58a-871614ae5faa",
       "name": "Code in JavaScript",
