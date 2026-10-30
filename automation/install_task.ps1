@@ -1,4 +1,4 @@
-<#
+﻿<#
 .SYNOPSIS
     注册 Windows 计划任务：每日定时运行 daily_sync.ps1。
 

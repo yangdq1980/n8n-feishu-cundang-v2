@@ -1,4 +1,4 @@
-<#
+﻿<#
 .SYNOPSIS
     每日同步脚本：把本地项目（脱敏后）提交并推送到 GitHub。
 
@@ -15,6 +15,13 @@ param(
     [string]$Branch  = "main",
     [string]$Remote  = "origin"
 )
+
+# 计划任务环境的 PATH 可能与交互式不同：显式补上 git / python 所在目录（存在才加）
+$gitBin = "C:\Users\admin\.workbuddy\binaries\PortableGit\versions\1.3.0\mingw64\bin"
+$pyBin  = "C:\Users\admin\.workbuddy\binaries\python\versions\3.13.12"
+foreach ($p in @($gitBin, $pyBin)) {
+    if ((Test-Path $p) -and ($env:Path -notlike "*$p*")) { $env:Path = "$p;$env:Path" }
+}
 
 $ErrorActionPreference = "Continue"
 
