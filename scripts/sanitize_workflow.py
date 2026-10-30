@@ -46,6 +46,9 @@ def build_pairs(env: dict):
         (env.get("FEISHU_APP_ID"), "YOUR_FEISHU_APP_ID"),
         (env.get("OLD_FEISHU_APP_ID"), "YOUR_OLD_FEISHU_APP_ID"),
         (env.get("FEISHU_CHAT_ID"), "YOUR_FEISHU_CHAT_ID"),
+        # 飞书多维表格（归档目的地）：app_token / table_id 属个人资源标识，同样不应公开
+        (env.get("BITABLE_APP_TOKEN"), "YOUR_BITABLE_APP_TOKEN"),
+        (env.get("BITABLE_TABLE_ID"), "YOUR_BITABLE_TABLE_ID"),
     ]
     # cpolar host：从 WP_PUBLIC_BASE 提取纯域名
     wp = (env.get("WP_PUBLIC_BASE") or "").strip()

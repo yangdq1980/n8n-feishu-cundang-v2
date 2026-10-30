@@ -116,14 +116,17 @@
     },
     {
       "parameters": {
-        "url": "={{ $('Code in JavaScript3').first().json.featuredImageUrl }}",
+        "url": "={{ $json.url }}",
         "options": {
           "response": {
             "response": {
               "responseFormat": "file"
             }
-          }
-        }
+          },
+          "timeout": 20000,
+          "allowUnauthorizedCerts": true
+        },
+        "sendHeaders": false
       },
       "id": "a1b2c3d4-0007-4a1a-9a1a-000000000007",
       "name": "回发下载配图",
@@ -133,7 +136,11 @@
         2528,
         192
       ],
-      "onError": "continueRegularOutput"
+      "onError": "continueRegularOutput",
+      "options": {},
+      "retryOnFail": true,
+      "maxTries": 2,
+      "waitBetweenTries": 1000
     },
     {
       "parameters": {
@@ -180,7 +187,7 @@
     },
     {
       "parameters": {
-        "jsCode": "// 群内直发全文：不截断正文；超长按段落自动拆成多条 post 消息\n// 第 1 条带配图，最后 1 条带文档/WordPress 链接\nconst c3 = $('Code in JavaScript3').first().json || {};\nconst brief = (c3.brief || '').trim();\nconst query = c3.query || '';\n// ↓↓↓ 公网基址：由 _diag/refresh_public_urls.py 自动维护（cpolar 域名每日可能变化）\nconst WP_PUBLIC_BASE = 'https://YOUR_CPOLAR_HOST';\nlet wpLink = (($('Create a post').first().json) || {}).link || '';\nif (wpLink && WP_PUBLIC_BASE) {\n  wpLink = wpLink.replace(/^https?:\\/\\/[^/]+/i, WP_PUBLIC_BASE.replace(/\\/+$/, ''));\n}\nconst docNode = $('飞书建文档').first().json || {};\nconst docId = (docNode.data && docNode.data.document && docNode.data.document.document_id) || '';\nconst docLink = docId ? ('https://www.feishu.cn/docx/' + docId) : '';\nconst chatId = $('飞书事件解析').first().json.chat_id || 'YOUR_FEISHU_CHAT_ID';\nconst up = $('回发上传图片').first().json || {};\nconst imageKey = (up.data && up.data.image_key) || up.image_key || '';\n\n// 单条 post 的正文上限（字）。飞书单条消息内容有大小限制，按 3000 字留足余量\nconst CHUNK = 3000;\n\nfunction chunkText(t, size) {\n  const paras = String(t || '').split(/\\n+/).map((s) => s.trim()).filter(Boolean);\n  if (!paras.length) return [''];\n  const out = [];\n  let cur = '';\n  for (const para of paras) {\n    // 单段就超长时，硬切\n    if (para.length > size) {\n      if (cur) { out.push(cur); cur = ''; }\n      for (let i = 0; i < para.length; i += size) out.push(para.slice(i, i + size));\n      continue;\n    }\n    if (!cur) { cur = para; }\n    else if ((cur.length + 1 + para.length) <= size) { cur = cur + '\\n' + para; }\n    else { out.push(cur); cur = para; }\n  }\n  if (cur) out.push(cur);\n  return out;\n}\n\nconst parts = chunkText(brief, CHUNK);\nconst total = parts.length;\nconst items = [];\n\nparts.forEach((seg, i) => {\n  const isFirst = (i === 0);\n  const isLast = (i === total - 1);\n  const blocks = [];\n\n  const head = isFirst\n    ? ('📌 ' + query + '\\n\\n')\n    : ('（续 ' + (i + 1) + '/' + total + '）\\n\\n');\n  blocks.push([{ tag: 'text', text: head + seg }]);\n\n  if (isFirst && imageKey) blocks.push([{ tag: 'img', image_key: imageKey }]);\n\n  const links = [];\n  if (docLink) links.push('📄 飞书文档：' + docLink);\n  if (wpLink) links.push('🌐 WordPress：' + wpLink);\n  if (isLast && links.length) blocks.push([{ tag: 'text', text: links.join('\\n') }]);\n\n  const title = isFirst\n    ? '🤖 简报已生成'\n    : ('🤖 简报（续 ' + (i + 1) + '/' + total + '）');\n\n  items.push({\n    json: {\n      chat_id: chatId,\n      postContent: JSON.stringify({ zh_cn: { title, content: blocks } }),\n      part: i + 1,\n      total,\n      textLen: seg.length\n    }\n  });\n});\n\nreturn items;"
+        "jsCode": "\n// 群内直发全文：不截断正文；超长按段落自动拆成多条 post 消息\n// 第 1 条 = 标题 + 正文首段 + 全部配图（集中展示）\n// 最后 1 条 = 飞书文档 / WordPress 链接\nconst c3 = $('Code in JavaScript3').first().json || {};\nconst brief = (c3.brief || '').trim();\nconst query = c3.query || '';\n// ↓↓↓ 公网基址：由本补丁从本地 .env 注入（脚本自身不硬编码真实域名）\nconst WP_PUBLIC_BASE = 'https://YOUR_CPOLAR_HOST';\nlet wpLink = (($('Create a post').first().json) || {}).link || '';\nif (wpLink && WP_PUBLIC_BASE) {\n  wpLink = wpLink.replace(/^https?:\\/\\/[^/]+/i, WP_PUBLIC_BASE.replace(/\\/+$/, ''));\n}\nconst docNode = $('飞书建文档').first().json || {};\nconst docId = (docNode.data && docNode.data.document && docNode.data.document.document_id) || '';\nconst docLink = docId ? ('https://www.feishu.cn/docx/' + docId) : '';\nconst chatId = $('飞书事件解析').first().json.chat_id || 'YOUR_FEISHU_CHAT_ID';\n\n// ===== 收集全部上传成功的 image_key =====\n// 「回发上传图片」逐张执行，失败的 item 只有 error 字段、没有 image_key，天然被跳过\nfunction safeAll(name) {\n  try {\n    const ref = $(name);\n    return (ref && typeof ref.all === 'function') ? ref.all() : [];\n  } catch (e) { return []; }\n}\nconst upItems = safeAll('回发上传图片');\nconst imageKeys = [];\nfor (const it of upItems) {\n  const j = (it && it.json) || {};\n  const key = (j.data && j.data.image_key) || j.image_key || '';\n  if (key && !imageKeys.includes(key)) imageKeys.push(key);\n}\nconst MAX_IMAGES = 9;\nwhile (imageKeys.length > MAX_IMAGES) imageKeys.pop();\n\n// 单条 post 的正文上限（字）。飞书单条消息内容有大小限制，按 3000 字留足余量\nconst CHUNK = 3000;\n\nfunction chunkText(t, size) {\n  const paras = String(t || '').split(/\\n+/).map((s) => s.trim()).filter(Boolean);\n  if (!paras.length) return [''];\n  const out = [];\n  let cur = '';\n  for (const para of paras) {\n    // 单段就超长时，硬切\n    if (para.length > size) {\n      if (cur) { out.push(cur); cur = ''; }\n      for (let i = 0; i < para.length; i += size) out.push(para.slice(i, i + size));\n      continue;\n    }\n    if (!cur) { cur = para; }\n    else if ((cur.length + 1 + para.length) <= size) { cur = cur + '\\n' + para; }\n    else { out.push(cur); cur = para; }\n  }\n  if (cur) out.push(cur);\n  return out;\n}\n\nconst parts = chunkText(brief, CHUNK);\nconst total = parts.length;\nconst items = [];\n\nparts.forEach((seg, i) => {\n  const isFirst = (i === 0);\n  const isLast = (i === total - 1);\n  const blocks = [];\n\n  const head = isFirst\n    ? ('📌 ' + query + '\\n\\n')\n    : ('（续 ' + (i + 1) + '/' + total + '）\\n\\n');\n  blocks.push([{ tag: 'text', text: head + seg }]);\n\n  // ===== 配图集中展示（第 1 条消息正文之后，一图一行） =====\n  if (isFirst && imageKeys.length) {\n    blocks.push([{ tag: 'text', text: '\\n📸 配图（' + imageKeys.length + ' 张）' }]);\n    for (const key of imageKeys) {\n      blocks.push([{ tag: 'img', image_key: key }]);\n    }\n  }\n\n  const links = [];\n  if (docLink) links.push('📄 飞书文档：' + docLink);\n  if (wpLink) links.push('🌐 WordPress：' + wpLink);\n  if (isLast && links.length) blocks.push([{ tag: 'text', text: links.join('\\n') }]);\n\n  const title = isFirst\n    ? '🤖 简报已生成'\n    : ('🤖 简报（续 ' + (i + 1) + '/' + total + '）');\n\n  items.push({\n    json: {\n      chat_id: chatId,\n      postContent: JSON.stringify({ zh_cn: { title, content: blocks } }),\n      part: i + 1,\n      total,\n      imageCount: (isFirst ? imageKeys.length : 0),\n      textLen: seg.length\n    }\n  });\n});\n\nreturn items;\n"
       },
       "id": "a1b2c3d4-0009-4a1a-9a1a-000000000009",
       "name": "组装群聊回发卡",
@@ -340,7 +347,9 @@
             }
           ]
         },
-        "options": {}
+        "options": {
+          "timeout": 20000
+        }
       },
       "id": "6d62f73a-9cb3-4025-97ff-0654f56dc00f",
       "name": "HTTP Request",
@@ -349,11 +358,14 @@
       "position": [
         -16,
         -48
-      ]
+      ],
+      "retryOnFail": true,
+      "maxTries": 2,
+      "waitBetweenTries": 1500
     },
     {
       "parameters": {
-        "jsCode": "const data = $input.first().json;\nconst list = data.results || [];\n\nconst text = list.slice(0, 6).map((r, i) =>\n  `【${i + 1}】${r.title || '无标题'}\\n链接：${r.url || ''}\\n摘要：${r.content || '（无摘要）'}`\n).join('\\n\\n');\n\nconst trig = $('飞书事件解析').first().json;\nreturn [{\n  json: {\n    query: trig.chatInput,\n    search_text: text,\n    sessionId: trig.chat_id || 'feishu-group'\n  }\n}];"
+        "jsCode": "\n// 把 searxng 的网页检索结果拼成给 LLM 的素材文本\nconst data = $input.first().json;\nconst list = Array.isArray(data.results) ? data.results : [];\n\nconst text = list.slice(0, 6).map((r, i) =>\n  `【${i + 1}】${r.title || '无标题'}\\n链接：${r.url || ''}\\n摘要：${r.content || '（无摘要）'}`\n).join('\\n\\n');\n\nconst trig = $('飞书事件解析').first().json;\n\n// 【重要】检索为空的兜底\n// 实测：searxng 上游引擎偶发限流会返回 0 条。若不提示，LLM 会凭空编造与主题无关的内容。\n// 这里显式给出「素材不足」信号，让模型只基于主题本身作答，并把标记透传给下游（配图改用主题兜底）。\nconst noMaterial = text.length === 0;\nconst searchText = noMaterial\n  ? `（本次联网检索未返回任何结果，主题为「${trig.chatInput}」。请仅依据该主题的通识知识撰写，禁止编造具体数据、机构名称与时间点；无法确认的内容一律使用定性描述。）`\n  : text;\n\nreturn [{\n  json: {\n    query: trig.chatInput,\n    search_text: searchText,\n    noMaterial,\n    hitCount: list.length,\n    sessionId: trig.chat_id || 'feishu-group'\n  }\n}];\n"
       },
       "id": "afee8663-07f5-4add-a58a-871614ae5faa",
       "name": "Code in JavaScript",
@@ -366,7 +378,7 @@
     },
     {
       "parameters": {
-        "jsCode": "const items = $input.all();\nif (items.length === 0) return items;\n\nconst output = items[0].json;\n// 1. 兼容多种 Ollama 返回格式\nlet rawText = output.text || output.output || output.content || output.message?.content || '';\n\n// 2. 提取 JSON 内容（防止 Ollama 输出额外的废话或 Markdown）\nlet jsonMatch = rawText.match(/[\\s\\S]*\\{[\\s\\S]*\\}[\\s\\S]*/);\nif (!jsonMatch) jsonMatch = [rawText]; // 兜底\n\nlet parsed = {};\ntry {\n    parsed = JSON.parse(jsonMatch[0]);\n} catch (error) {\n    // 如果解析失败，尝试用正则提取 brief 和 keywords 字段\n    const briefMatch = rawText.match(/\"brief\"\\s*:\\s*\"([^\"]*)\"/);\n    const keysMatch = rawText.match(/\"image_keywords\"\\s*:\\s*\\[(.*?)\\]/s);\n    \n    parsed = {\n        brief: briefMatch ? briefMatch[1] : rawText,\n        image_keywords: keysMatch ? keysMatch[1].split(',').map(s => s.trim().replace(/\"/g, '')) : []\n    };\n}\n\nconst brief = parsed.brief || rawText;\nconst keywords = Array.isArray(parsed.image_keywords) ? parsed.image_keywords.filter(Boolean) : [];\nconst query = $('飞书事件解析')?.first()?.json?.chatInput || $('Switch').params?.query || '未知主题';\n\nconst results = [];\n\n// 3. 始终生成简报数据\nresults.push({\n    json: {\n        type: 'brief',\n        query,\n        brief\n    }\n});\n\n// 4. 只有当确实存在有效关键词时，才生成搜索数据\nif (keywords.length > 0) {\n    results.push({\n        json: {\n            type: 'image_search',\n            query,\n            brief,\n            keyword: keywords[0] // 只取第一个关键词\n        }\n    });\n}\n\nreturn results;"
+        "jsCode": "\nconst items = $input.all();\nif (items.length === 0) return items;\n\nconst output = items[0].json;\n// 1. 兼容多种 Ollama / Agent 返回格式\nlet rawText = output.text || output.output || output.content || output.message?.content || '';\n\n// 2. 提取 JSON 内容（防止模型输出额外的废话或 markdown 代码块）\nlet jsonMatch = rawText.match(/[\\s\\S]*\\{[\\s\\S]*\\}[\\s\\S]*/);\nif (!jsonMatch) jsonMatch = [rawText];\n\nlet parsed = {};\ntry {\n    parsed = JSON.parse(jsonMatch[0]);\n} catch (error) {\n    // 3. 解析失败时用正则兜底抽取 brief / image_keywords\n    const briefMatch = rawText.match(/\"brief\"\\s*:\\s*\"([^\"]*)\"/);\n    const keysMatch = rawText.match(/\"image_keywords\"\\s*:\\s*\\[(.*?)\\]/s);\n    parsed = {\n        brief: briefMatch ? briefMatch[1] : rawText,\n        image_keywords: keysMatch ? keysMatch[1].split(',').map(s => s.trim().replace(/\"/g, '')) : []\n    };\n}\n\nconst brief = parsed.brief || rawText;\nconst query = $('飞书事件解析')?.first()?.json?.chatInput || '未知主题';\n// 上游检索是否为空（07 号节点打的标记）；节点重跑场景下取不到，做 try 兜底\nlet noMaterial = false;\ntry { noMaterial = $('Code in JavaScript')?.first()?.json?.noMaterial === true; } catch (e) { noMaterial = false; }\n\n// 4. 关键词清洗：去空、去重、限数量\n//    【关键设计】把 query（用户原始主题）作为第一个关键词。\n//    原因：实测 LLM 在检索素材为空时会「幻觉」出与主题无关的词（例：问低空经济，却给出新能源汽车），\n//    用主题本身兜底，能保证至少有一组配图与主题相关。\nconst MAX_KEYWORDS = 2;          // 2 个关键词 × 每词 3 张 = 6 张图（与产品预期一致）\nconst seenKw = new Set();\nconst keywords = [];\n\nfunction addKw(k) {\n    const kw = String(k == null ? '' : k).trim();\n    if (!kw) return false;\n    const sig = kw.toLowerCase();\n    if (seenKw.has(sig)) return false;\n    seenKw.add(sig);\n    keywords.push(kw);\n    return true;\n}\n\n// 4.1 主题本身优先（过长时截断，搜索词过长会显著降低命中率）\naddKw(String(query).replace(/[，。！？、,.!?]/g, ' ').trim().slice(0, 20));\n\n// 4.2 再补 LLM 给出的细分关键词\nconst rawKeywords = Array.isArray(parsed.image_keywords) ? parsed.image_keywords : [];\nfor (const k of rawKeywords) {\n    if (keywords.length >= MAX_KEYWORDS) break;\n    addKw(k);\n}\n\nconst results = [];\n\n// 5. 简报数据（供 Switch 的 brief 分支 + Merge 汇合）\nresults.push({\n    json: {\n        type: 'brief',\n        query,\n        brief,\n        keywords,\n        noMaterial\n    }\n});\n\n// 6. 每个关键词各生成 1 条搜索任务\n//    HTTP Request1 会逐条执行，一条任务 = 一次 searxng 图片检索 = 最多 3 张图\nkeywords.forEach((kw, i) => {\n    results.push({\n        json: {\n            type: 'image_search',\n            query,\n            keyword: kw,\n            kwIndex: i + 1,\n            kwTotal: keywords.length\n        }\n    });\n});\n\nreturn results;\n"
       },
       "id": "3d475114-f351-4281-a71d-b0ac5c4fda0f",
       "name": "Code in JavaScript1",
@@ -463,11 +475,13 @@
             },
             {
               "name": "num_results",
-              "value": "5"
+              "value": "8"
             }
           ]
         },
-        "options": {}
+        "options": {
+          "timeout": 20000
+        }
       },
       "id": "60422a91-2b33-443a-897b-3cdba470c09c",
       "name": "HTTP Request1",
@@ -476,11 +490,14 @@
       "position": [
         720,
         96
-      ]
+      ],
+      "retryOnFail": true,
+      "maxTries": 2,
+      "waitBetweenTries": 1200
     },
     {
       "parameters": {
-        "jsCode": "const data = $input.first().json;\nconst list = data.results || [];\n\nconst images = list.slice(0, 3).map((r, i) => ({\n  index: i + 1,\n  title: r.title || '无标题',\n  url: r.url || '',\n  thumbnail: r.thumbnail_src || r.thumbnail || '',\n  img_src: r.img_src || ''\n}));\n\nreturn [{\n  json: {\n    type: 'image_result',\n    keyword: $('Switch').first().json.keyword,\n    images\n  }\n}];"
+        "jsCode": "\n// 模式：Run Once for All Items\n// 输入：HTTP Request1 对每个关键词的 searxng images 检索结果（N 个 item）\n// 输出：每个关键词 1 个 image_result item，内含最多 PER_KEYWORD 张可用图\n// 说明：这里多挑几张（6），是为了给 Code3 留出「某词无图时用别词补足」的余量。\nconst PER_KEYWORD = 6;                              // 每个关键词最多挑几张候选（下游再按配额截断）\nconst EXT_OK = /\\.(jpe?g|png|webp|gif|bmp)(\\?|#|$)/i;   // 飞书/邮件可用的图片扩展名\nconst EXT_BAD = /\\.(svg|ico|tiff?)(\\?|#|$)/i;        // 飞书 image 上传不支持的格式\nconst BAD_HOST = /(toutiaoimg\\.com|pstatp\\.com|byteimg\\.com)/i;  // 强防盗链，实测必 403\n\n// 与 HTTP Request1 的输入一一对应（同为 Code in JavaScript1 的 image_search 分支，顺序一致）\nlet kwItems = [];\ntry {\n    kwItems = $('Code in JavaScript1').all().filter(i => i.json && i.json.type === 'image_search');\n} catch (e) { kwItems = []; }\n\n// 从一条 searxng 结果里挑出「最像真图片、且大概率能下载」的 URL\nfunction pickUrl(r) {\n    const cand = [r.img_src, r.thumbnail_src, r.thumbnail]\n        .filter(u => typeof u === 'string' && /^https?:\\/\\//i.test(u));\n    for (const u of cand) {\n        if (!EXT_OK.test(u)) continue;\n        if (EXT_BAD.test(u)) continue;\n        if (BAD_HOST.test(u)) continue;\n        return u;\n    }\n    // 退路：没有扩展名明确的候选时，取第一个非防盗链的\n    // （例如搜索引擎的缩略图代理 kkimgs.yisou.com/ims?kt=url... 无扩展名但通常可下载）\n    for (const u of cand) {\n        if (EXT_BAD.test(u)) continue;\n        if (BAD_HOST.test(u)) continue;\n        return u;\n    }\n    return '';\n}\n\nconst out = [];\nlet seq = 0;\n\n$input.all().forEach((it, idx) => {\n    const data = (it && it.json) || {};\n    const list = Array.isArray(data.results) ? data.results : [];\n    const kw = (kwItems[idx] && kwItems[idx].json.keyword) || (kwItems[0] && kwItems[0].json.keyword) || '';\n\n    const images = [];\n    const seenUrl = new Set();\n    for (const r of list) {\n        if (images.length >= PER_KEYWORD) break;\n        const url = pickUrl(r);\n        if (!url) continue;\n        const base = url.split('?')[0];\n        if (seenUrl.has(base)) continue;\n        seenUrl.add(base);\n        images.push({\n            index: seq + images.length + 1,\n            keyword: kw,\n            title: r.title || kw || '相关配图',\n            pageUrl: r.url || '',\n            img_src: url\n        });\n    }\n    seq += images.length;\n\n    out.push({\n        json: {\n            type: 'image_result',\n            keyword: kw,\n            kwIndex: idx + 1,\n            count: images.length,\n            images\n        }\n    });\n});\n\nreturn out.length ? out : [{ json: { type: 'image_result', keyword: '', kwIndex: 0, count: 0, images: [] } }];\n"
       },
       "id": "8bf813f1-8b28-477d-b6a9-5e81076a0243",
       "name": "Code in JavaScript2",
@@ -504,7 +521,7 @@
     },
     {
       "parameters": {
-        "jsCode": "// 模式：Run Once for All Items\n// 加固：$input 可能在\"节点重跑/paired-item 过滤\"场景丢 item（实证执行#5774），\n// 故同时按节点名兜底补拉 Merge / Code1 / Code2 的输出，按 JSON 去重。\nfunction safeAll(name) {\n  try {\n    const ref = $(name);\n    return (ref && typeof ref.all === 'function') ? ref.all() : [];\n  } catch (e) { return []; }\n}\nconst pool = [];\nconst seenJson = new Set();\nconst sources = []\n  .concat($input.all() || [])\n  .concat(safeAll('Merge'))\n  .concat(safeAll('Code in JavaScript2'))\n  .concat(safeAll('Code in JavaScript1'));\nfor (const it of sources) {\n  if (!it || !it.json) continue;\n  const k = JSON.stringify(it.json);\n  if (seenJson.has(k)) continue;\n  seenJson.add(k);\n  pool.push(it.json);\n}\n\nlet keyword = \"\";\nlet brief = \"\";\nlet query = \"\";\nconst imgCandidates = [];\n\nfunction pushImg(url, title) {\n  if (typeof url !== \"string\" || !url.startsWith(\"http\")) return;\n  if (url.includes('.html') || url.includes('search?q') || url.includes('lemmaId=')) return;\n  imgCandidates.push({ url, title: title || keyword || \"相关配图\" });\n}\n\nfor (const j of pool) {\n  if (j.query) query = j.query;\n  if (j.brief) brief = j.brief;\n  if (j.keyword) keyword = j.keyword;\n  pushImg(j.img_src, j.title);\n  pushImg(j.thumbnail, j.title);\n  if (Array.isArray(j.images)) {\n    for (const im of j.images) {\n      pushImg(im.img_src, im.title);\n      pushImg(im.thumbnail, im.title);\n    }\n  }\n}\n\nconst seen = new Set();\nconst uniq = [];\nfor (const c of imgCandidates) {\n  const key = c.url.split(\"?\")[0];\n  if (!seen.has(key)) { seen.add(key); uniq.push(c); }\n}\n\nconst esc = (s) => String(s == null ? '' : s)\n  .replace(/&/g, '&amp;').replace(/</g, '&lt;')\n  .replace(/>/g, '&gt;').replace(/\"/g, '&quot;');\n\n// 邮件内图片一律用【原图直链】：images.weserv.nl 在本网络 ECONNRESET 不可达（收件人在国内同理）。\nlet imagesHtml = \"\";\nfor (const c of uniq) {\n  imagesHtml += `\n    <div style=\"margin:0 auto 36px;text-align:center;page-break-inside:avoid;\">\n      <img src=\"${esc(c.url)}\" alt=\"${esc(c.title)}\" style=\"max-width:100%;height:auto;border-radius:12px;box-shadow:0 6px 16px rgba(0,0,0,0.08);display:block;margin:0 auto;\">\n      <p style=\"font-size:13px;color:#888;margin-top:12px;font-style:italic;\">📍 ${esc(c.title)}</p>\n    </div>`;\n}\nif (!imagesHtml) imagesHtml = `<p style=\"color:#999;text-align:center;padding:30px;\">😕 未检索到可用配图。</p>`;\n\nconst briefSafe = (brief || \"本次未生成简报内容。\").replace(/\\n+/g, \"</p><p style=\\\"font-size:16px;line-height:1.9;color:#444;margin:0 0 18px;text-indent:2em;\\\">\");\nconst kwLine = keyword\n  ? `<p style=\"font-size:15px;line-height:1.9;color:#1a1a1a;margin:0 0 18px;text-align:justify;\"><strong>🔍 检索关键词：</strong>${esc(keyword)}</p>`\n  : '';\nconst contentHtml = `\n  <p style=\"font-size:16px;line-height:1.9;color:#444;margin:0 0 18px;text-indent:2em;\"><strong style=\"color:#1a1a1a;\">✨ 核心看点：</strong>${briefSafe}</p>\n  ${kwLine}`;\n\nconst finalHtml = `<!DOCTYPE html><html><head><meta charset=\"utf-8\"></head>\n<body style=\"font-family:'Helvetica Neue',Arial,'PingFang SC','Microsoft YaHei',sans-serif;background:#f4f6f8;padding:40px 20px;margin:0;\">\n  <div style=\"max-width:680px;margin:0 auto;background:#fff;padding:55px 40px;border-radius:16px;box-shadow:0 12px 40px rgba(0,0,0,0.05);\">\n    <h1 style=\"color:#1a1a1a;text-align:center;margin:0 0 40px;font-size:26px;\">🤖 AI 搜图报告：${esc(keyword || \"AI 自动搜图\")}</h1>\n    <div style=\"margin-bottom:40px;\">${contentHtml}</div>\n    <div style=\"border-top:1px dashed #e8e8e8;padding-top:30px;\">\n      <h3 style=\"color:#333;text-align:center;margin:0 0 30px;font-size:20px;\">📸 精选配图</h3>\n      ${imagesHtml}\n    </div>\n    <div style=\"text-align:center;margin-top:50px;font-size:12px;color:#b0b0b0;border-top:1px solid #f0f0f0;padding-top:20px;\">\n      <p>本邮件由 n8n 自动化工作流自动生成</p>\n      <p>🕒 ${new Date().toLocaleString()}</p>\n    </div>\n  </div>\n</body></html>`;\n\nconst featuredImageUrl = uniq.length > 0 ? uniq[0].url : \"\";\n\nreturn [{ json: {\n  htmlEmail: finalHtml,\n  featuredImageUrl,                       // 原图直链，供 HTTP Request2 下载\n  featuredImageWeservUrl: featuredImageUrl, // 兼容旧字段名，值同原图（代理通道已弃用）\n  hasImage: uniq.length > 0,\n  query: query || keyword || \"AI 自动搜图\",\n  brief,\n  keyword\n} }];\n"
+        "jsCode": "\n// 模式：Run Once for All Items\n// 加固：$input 可能在\"节点重跑/paired-item 过滤\"场景丢 item（实证执行#5774），\n// 故同时按节点名兜底补拉 Merge / Code1 / Code2 的输出，按 JSON 去重。\nfunction safeAll(name) {\n  try {\n    const ref = $(name);\n    return (ref && typeof ref.all === 'function') ? ref.all() : [];\n  } catch (e) { return []; }\n}\nconst pool = [];\nconst seenJson = new Set();\nconst sources = []\n  .concat($input.all() || [])\n  .concat(safeAll('Merge'))\n  .concat(safeAll('Code in JavaScript2'))\n  .concat(safeAll('Code in JavaScript1'));\nfor (const it of sources) {\n  if (!it || !it.json) continue;\n  const k = JSON.stringify(it.json);\n  if (seenJson.has(k)) continue;\n  seenJson.add(k);\n  pool.push(it.json);\n}\n\n// ===== 配图配额（两轮分配）=====\n// 目标：2 个关键词共 6 张。\n// 第一轮：每个关键词最多 3 张 —— 保证「每主题 3 张」的语义。\n// 第二轮：若某关键词搜不到图导致总量不足 6 张，从其他关键词的剩余候选补足。\n//         （实测 searxng 对部分细分词返回 0 图，不补会出现「只有 3 张」）\nconst MAX_PER_KEYWORD = 3;\nconst TARGET_IMAGES = 6;\nconst MAX_IMAGES = 9;\n// 飞书 im/v1/images 与邮件客户端都不支持 svg，直接排除\nconst BAD_URL = /\\.(svg|ico|tiff?)(\\?|#|$)/i;\n// 强防盗链图床：实测无论是否带 Referer 都返回 403，直接在上游剔除，避免占用配图配额\nconst BAD_HOST = /(toutiaoimg\\.com|pstatp\\.com|byteimg\\.com)/i;\n\nlet brief = \"\";\nlet query = \"\";\nconst kwList = [];          // 保持出现顺序的关键词列表\nconst imgCandidates = [];   // { url, title, keyword }\n\nfunction pushImg(url, title, keyword) {\n  if (typeof url !== \"string\") return;\n  if (!/^https?:\\/\\//i.test(url)) return;\n  if (url.includes('.html') || url.includes('search?q') || url.includes('lemmaId=')) return;\n  if (BAD_URL.test(url)) return;\n  if (BAD_HOST.test(url)) return;\n  imgCandidates.push({\n    url,\n    title: title || keyword || \"相关配图\",\n    keyword: keyword || \"\"\n  });\n}\n\nfor (const j of pool) {\n  if (j.query) query = j.query;\n  if (j.brief) brief = j.brief;\n  if (j.keyword && !kwList.includes(j.keyword)) kwList.push(j.keyword);\n\n  // 兼容旧结构：单图字段\n  pushImg(j.img_src, j.title, j.keyword);\n  pushImg(j.thumbnail, j.title, j.keyword);\n\n  // 新结构：Code in JavaScript2 输出的 images 数组\n  if (Array.isArray(j.images)) {\n    for (const im of j.images) {\n      pushImg(im.img_src, im.title, im.keyword || j.keyword);\n      pushImg(im.thumbnail, im.title, im.keyword || j.keyword);\n    }\n  }\n}\n\n// 1) 先按 base url 全局去重\nconst seen = new Set();\nconst dedup = [];\nfor (const c of imgCandidates) {\n  const base = c.url.split(\"?\")[0];\n  if (seen.has(base)) continue;\n  seen.add(base);\n  dedup.push(c);\n}\n\n// 2) 第一轮：每关键词最多 MAX_PER_KEYWORD 张\nconst perKw = new Map();\nconst picked = [];\nfor (const c of dedup) {\n  const kwKey = c.keyword || \"__none__\";\n  const n = perKw.get(kwKey) || 0;\n  if (n >= MAX_PER_KEYWORD) continue;\n  perKw.set(kwKey, n + 1);\n  picked.push(c);\n}\n\n// 3) 第二轮：总量不足时，用剩余候选补足（解决「某关键词 0 图」）\nif (picked.length < TARGET_IMAGES) {\n  const taken = new Set(picked.map((c) => c.url.split(\"?\")[0]));\n  for (const c of dedup) {\n    if (picked.length >= TARGET_IMAGES) break;\n    const base = c.url.split(\"?\")[0];\n    if (taken.has(base)) continue;\n    taken.add(base);\n    picked.push(c);\n  }\n}\n\n// 4) 最终上限\nconst uniq = picked.slice(0, MAX_IMAGES);\n\nconst keywordsText = kwList.join(' · ');\n\nconst esc = (s) => String(s == null ? '' : s)\n  .replace(/&/g, '&amp;').replace(/</g, '&lt;')\n  .replace(/>/g, '&gt;').replace(/\"/g, '&quot;');\n\n// 邮件内图片一律用【原图直链】：images.weserv.nl 在本网络 ECONNRESET 不可达（收件人在国内同理）。\nlet imagesHtml = \"\";\nfor (const c of uniq) {\n  imagesHtml += `\n    <div style=\"margin:0 auto 36px;text-align:center;page-break-inside:avoid;\">\n      <img src=\"${esc(c.url)}\" alt=\"${esc(c.title)}\" style=\"max-width:100%;height:auto;border-radius:12px;box-shadow:0 6px 16px rgba(0,0,0,0.08);display:block;margin:0 auto;\">\n      <p style=\"font-size:13px;color:#888;margin-top:12px;font-style:italic;\">📍 ${esc(c.title)}</p>\n    </div>`;\n}\nif (!imagesHtml) imagesHtml = `<p style=\"color:#999;text-align:center;padding:30px;\">😕 未检索到可用配图。</p>`;\n\nconst briefSafe = (brief || \"本次未生成简报内容。\").replace(/\\n+/g, \"</p><p style=\\\"font-size:16px;line-height:1.9;color:#444;margin:0 0 18px;text-indent:2em;\\\">\");\nconst kwLine = keywordsText\n  ? `<p style=\"font-size:15px;line-height:1.9;color:#1a1a1a;margin:0 0 18px;text-align:justify;\"><strong>🔍 检索关键词：</strong>${esc(keywordsText)}</p>`\n  : '';\nconst contentHtml = `\n  <p style=\"font-size:16px;line-height:1.9;color:#444;margin:0 0 18px;text-indent:2em;\"><strong style=\"color:#1a1a1a;\">✨ 核心看点：</strong>${briefSafe}</p>\n  ${kwLine}`;\n\nconst finalHtml = `<!DOCTYPE html><html><head><meta charset=\"utf-8\"></head>\n<body style=\"font-family:'Helvetica Neue',Arial,'PingFang SC','Microsoft YaHei',sans-serif;background:#f4f6f8;padding:40px 20px;margin:0;\">\n  <div style=\"max-width:680px;margin:0 auto;background:#fff;padding:55px 40px;border-radius:16px;box-shadow:0 12px 40px rgba(0,0,0,0.05);\">\n    <h1 style=\"color:#1a1a1a;text-align:center;margin:0 0 40px;font-size:26px;\">🤖 AI 搜图报告：${esc(keywordsText || \"AI 自动搜图\")}</h1>\n    <div style=\"margin-bottom:40px;\">${contentHtml}</div>\n    <div style=\"border-top:1px dashed #e8e8e8;padding-top:30px;\">\n      <h3 style=\"color:#333;text-align:center;margin:0 0 30px;font-size:20px;\">📸 精选配图（${uniq.length} 张）</h3>\n      ${imagesHtml}\n    </div>\n    <div style=\"text-align:center;margin-top:50px;font-size:12px;color:#b0b0b0;border-top:1px solid #f0f0f0;padding-top:20px;\">\n      <p>本邮件由 n8n 自动化工作流自动生成</p>\n      <p>🕒 ${new Date().toLocaleString()}</p>\n    </div>\n  </div>\n</body></html>`;\n\nconst featuredImageUrl = uniq.length > 0 ? uniq[0].url : \"\";\n\nreturn [{ json: {\n  htmlEmail: finalHtml,\n  featuredImageUrl,                         // 首图（兼容旧字段）\n  featuredImageWeservUrl: featuredImageUrl, // 兼容旧字段名，值同原图（代理通道已弃用）\n  imageUrls: uniq.map(c => c.url),          // 【新增】全部配图直链，供回发链路逐张上传\n  imageCount: uniq.length,                  // 【新增】配图总数\n  keywords: kwList,                         // 【新增】本次使用的关键词列表\n  hasImage: uniq.length > 0,\n  query: query || keywordsText || \"AI 自动搜图\",\n  brief,\n  keyword: keywordsText\n} }];\n"
       },
       "id": "fa3fe919-86a2-4913-b3e8-2fced7aff4f9",
       "name": "Code in JavaScript3",
@@ -734,7 +751,7 @@
     },
     {
       "parameters": {
-        "jsCode": "const chatInput = ($('飞书事件解析').first().json.chatInput || '');\nconst query = ($('Code in JavaScript3').first().json.query || chatInput || '未知主题');\nconst searchText = ($('Code in JavaScript').first().json.search_text || '');\nconst c3 = ($('Code in JavaScript3').first().json || {});\nconst imgs = Array.isArray(c3.images) ? c3.images : [];\nconst now = (new Date()).toISOString().slice(0,16).replace('T',' ');\nconst records = [];\nconst parts = String(searchText).split(/\\n\\s*\\n/).map(s=>s.trim()).filter(Boolean);\nfor (const p of parts.slice(0,6)) {\n  records.push({ fields: { 查询词: query, 类型:'文字结果', 标题: p.slice(0,50), 内容或链接: p.slice(0,200), 来源:'SearXNG-general', 创建时间: now } });\n}\nfor (const im of imgs.slice(0,5)) {\n  const url = im.url || im.img_src || im.thumbnail || '';\n  if (typeof url !== 'string' || !url.startsWith('http')) continue;\n  const text = (im.title ? im.title + ' ' : '') + url;\n  records.push({ fields: { 查询词: query, 类型:'图片', 标题: (im.title||'配图'), 内容或链接: text, 来源:'SearXNG-images', 创建时间: now } });\n}\nreturn [{ json: { records } }];"
+        "jsCode": "\nconst chatInput = ($('飞书事件解析').first().json.chatInput || '');\nconst query = ($('Code in JavaScript3').first().json.query || chatInput || '未知主题');\nconst searchText = ($('Code in JavaScript').first().json.search_text || '');\nconst c3 = ($('Code in JavaScript3').first().json || {});\n\n// 兼容两种配图结构（多图改造后 Code3 输出 imageUrls 数组）：\n//   新版：c3.imageUrls = ['https://...', ...]\n//   旧版：c3.images = [{ url|img_src|thumbnail, title }, ...]\nlet imgs = [];\nif (Array.isArray(c3.images) && c3.images.length) {\n  imgs = c3.images.map((im, i) => ({\n    url: im.url || im.img_src || im.thumbnail || '',\n    title: im.title || ('配图' + (i + 1))\n  }));\n} else if (Array.isArray(c3.imageUrls)) {\n  imgs = c3.imageUrls.map((u, i) => ({ url: u, title: '配图' + (i + 1) }));\n}\n\nconst now = (new Date()).toISOString().slice(0,16).replace('T',' ');\nconst records = [];\n\n// 1) 网页检索结果：最多 6 条\nconst parts = String(searchText).split(/\\n\\s*\\n/).map(s=>s.trim()).filter(Boolean);\nfor (const p of parts.slice(0,6)) {\n  records.push({ fields: { 查询词: query, 类型:'文字结果', 标题: p.slice(0,50), 内容或链接: p.slice(0,200), 来源:'SearXNG-general', 创建时间: now } });\n}\n\n// 2) 配图：最多 6 条（与飞书卡片展示张数一致）\nfor (const im of imgs.slice(0,6)) {\n  const url = im.url || '';\n  if (typeof url !== 'string' || !url.startsWith('http')) continue;\n  const text = (im.title ? im.title + ' ' : '') + url;\n  records.push({ fields: { 查询词: query, 类型:'图片', 标题: (im.title||'配图'), 内容或链接: text, 来源:'SearXNG-images', 创建时间: now } });\n}\n\nreturn [{ json: { records } }];\n"
       },
       "id": "fe6fc556-2207-4259-9ba0-eec6b13fd08f",
       "name": "组装搜索存档",
@@ -749,7 +766,7 @@
     {
       "parameters": {
         "method": "POST",
-        "url": "=https://open.feishu.cn/open-apis/bitable/v1/apps/DcIwbWWXvaPVZEs4OjZccUC4nBh/tables/tblXvtMtBCts9JC8/records/batch_create",
+        "url": "=https://open.feishu.cn/open-apis/bitable/v1/apps/YOUR_BITABLE_APP_TOKEN/tables/YOUR_BITABLE_TABLE_ID/records/batch_create",
         "sendHeaders": true,
         "headerParameters": {
           "parameters": [
@@ -776,7 +793,8 @@
         2560,
         -80
       ],
-      "onError": "continueRegularOutput"
+      "onError": "continueRegularOutput",
+      "notes": "新 App 自建多维表格（owner=新App），避免旧表 403"
     },
     {
       "parameters": {
@@ -809,6 +827,19 @@
       "onError": "continueRegularOutput",
       "notes": "把文档设为「组织内获得链接的人可阅读」，否则群里其他人打不开",
       "notesInFlow": true
+    },
+    {
+      "parameters": {
+        "jsCode": "\n// 把 Code in JavaScript3 汇总出的 imageUrls 拆成多个 item，\n// 让「回发下载配图 → 回发上传图片」逐张执行（一个 item = 一张图）。\nconst c3 = (() => {\n  try { return $('Code in JavaScript3').first().json || {}; } catch (e) { return {}; }\n})();\nconst urls = Array.isArray(c3.imageUrls) ? c3.imageUrls.filter(u => typeof u === 'string' && /^https?:\\/\\//i.test(u)) : [];\n\n// 防盗链：部分图床（如今日头条 toutiaoimg）会校验 Referer，缺失直接 403。\n// 这里按图片自身域名算一个 origin 作为 Referer，命中率最高。\nfunction originOf(u) {\n  try { return new URL(u).origin + '/'; } catch (e) { return ''; }\n}\n\n// 无图时也要输出 1 个占位 item，避免整条回发链路中断（下游靠 image_key 是否存在来跳过）\nif (!urls.length) {\n  return [{ json: { url: '', idx: 0, total: 0, placeholder: true, referer: '' } }];\n}\n\nreturn urls.map((u, i) => ({\n  json: {\n    url: u,\n    idx: i + 1,\n    total: urls.length,\n    placeholder: false,\n    referer: originOf(u)\n  }\n}));\n"
+      },
+      "id": "a1b2c3d4-0010-4a1a-9a1a-000000000010",
+      "name": "拆分配图",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2416.0,
+        192.0
+      ]
     }
   ],
   "connections": {
@@ -1121,7 +1152,7 @@
       "main": [
         [
           {
-            "node": "回发下载配图",
+            "node": "拆分配图",
             "type": "main",
             "index": 0
           }
@@ -1166,6 +1197,17 @@
         [
           {
             "node": "设置文档权限",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "拆分配图": {
+      "main": [
+        [
+          {
+            "node": "回发下载配图",
             "type": "main",
             "index": 0
           }

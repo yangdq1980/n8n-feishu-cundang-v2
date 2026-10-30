@@ -15,12 +15,12 @@
 | **群内 @ 触发** | 飞书自建应用事件订阅 `im.message.receive_v1`，Webhook 回调，含 `url_verification` 握手 |
 | **联网搜索** | 通过自建 SearXNG 搜索（`categories=general`），聚合多源信息 |
 | **AI 简报** | Ollama `qwen3:8b` 生成约 2000 字结构化简报（每节 ≥300 字） |
-| **配图** | SearXNG `categories=images` 按 AI 提炼的关键词抓图，每关键词 3 张 |
-| **邮件推送** | n8n Email 节点发送 HTML 简报 |
-| **WordPress 归档** | 通过 REST API 创建文章（图片回链走公网隧道基址） |
+| **配图** | SearXNG `categories=images` 按关键词抓图：**每个关键词 3 张、共 6 张**，含格式过滤/防盗链剔除/SSL 容错/失败降级 |
+| **邮件推送** | n8n Email 节点发送 HTML 简报（含全部配图） |
+| **WordPress 归档** | 通过 REST API 上传特色图 + 创建文章（图片回链走公网隧道基址） |
 | **飞书文档归档** | 建 docx 文档、写入正文、设置 `anyone_readable` + `external_access` 公开可读 |
-| **飞书多维表格** | 把搜索结果/简报元数据写入 Base 数据表 |
-| **群内回发** | 组装 `post` 富文本卡片（标题 + 图 + 摘要），上传图片拿 `image_key` 后发群 |
+| **飞书多维表格** | 把搜索结果与配图元数据写入 Base（**须由同一 App 创建**，否则 403） |
+| **群内回发** | 上传图片拿 `image_key`，组装 `post` 富文本：标题 + 正文 + **全部配图集中展示** + 文档/WP 链接 |
 
 ---
 
@@ -50,8 +50,10 @@ flowchart TD
     FT --> ROOT[飞书根目录]
     ROOT --> AR[组装搜索存档] --> ST[飞书写搜索表]
     ROOT --> DOC[飞书建文档] --> AD[组装飞书文档] --> WD[飞书写文档内容] --> PERM[设置文档权限]
-    ST --> RT[回发获取Token] --> DL[回发下载配图] --> UP[回发上传图片] --> CARD[组装群聊回发卡] --> SEND[发送富文本卡片]
+    ST --> RT[回发获取Token] --> SP[拆分配图] --> DL[回发下载配图] --> UP[回发上传图片] --> CARD[组装群聊回发卡] --> SEND[发送富文本卡片]
 ```
+
+> **共 35 个节点**，完整逐节点讲解见 👉 **[docs/TUTORIAL.md](docs/TUTORIAL.md)**（每个节点的作用、参数逐项、上下游契约、技术机理、踩坑记录与代码注释）。
 
 ### 关键第三方依赖
 - **飞书开放平台**（自建应用）：`tenant_access_token`、`im/v1/messages`、`im/v1/images`、`drive/v1/permissions`、`bitable`
@@ -113,12 +115,50 @@ cp .env.example .env
 | `YOUR_FEISHU_APP_SECRET` | 飞书应用 App Secret |
 | `YOUR_FEISHU_CHAT_ID` | 目标群 chat_id（`oc_` 开头） |
 | `YOUR_CPOLAR_HOST` | WP 图片公网基址域名 |
+| `YOUR_BITABLE_APP_TOKEN` | 多维表格 Base 标识（**须由同一 App 创建**） |
+| `YOUR_BITABLE_TABLE_ID` | 多维表格 data table 标识 |
 
 ### 4. 配置飞书事件订阅
 开放平台 → 事件与回调 → 请求地址填：`https://<你的n8n域名>/webhook/<workflowId>/webhook`，订阅 `im.message.receive_v1`。
 
 ### 5. 启用并测试
 激活工作流，在群里 `@机器人 测试主题`，观察各节点执行。
+
+### 6. 多维表格初始化（**必读**，否则归档静默失败）
+
+飞书 Base 的 owner 是**创建它的那个 App**。如果 Base 由另一个 App（或人工）创建，当前 App 写入会返回：
+
+```
+403  {"code":91403,"msg":"Forbidden"}
+```
+
+而该节点开了 `continueRegularOutput`，工作流**仍显示成功**，只是数据没进去。
+
+**推荐做法：让机器人 App 自己创建 Base**
+
+```bash
+TOKEN=$(curl -s -X POST "https://open.feishu.cn/open-apis/auth/v3/tenant_access_token/internal" \
+  -H "Content-Type: application/json" \
+  -d '{"app_id":"cli_xxx","app_secret":"xxx"}' | python -c "import sys,json;print(json.load(sys.stdin)['tenant_access_token'])")
+
+# 应用云空间根目录
+FOLDER=$(curl -s -H "Authorization: Bearer $TOKEN" \
+  "https://open.feishu.cn/open-apis/drive/explorer/v2/root_folder/meta" \
+  | python -c "import sys,json;print(json.load(sys.stdin)['data']['token'])")
+
+# 新建 Base（返回 app.app_token / app.default_table_id）
+curl -s -X POST -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
+  -d "{\"name\":\"飞书存档 · 搜索记录\",\"folder_token\":\"$FOLDER\"}" \
+  "https://open.feishu.cn/open-apis/bitable/v1/apps"
+```
+
+然后在新建的 table 里建 **6 个多行文本字段**（名称必须完全一致）：
+
+`查询词` / `类型` / `标题` / `内容或链接` / `来源` / `创建时间`
+
+最后把 `app_token`、`table_id` 填进 `20 飞书写搜索表` 节点的 URL。
+
+> 期望的 `20 飞书写搜索表` 返回：`{"code":0,"data":{"records":[...]}}`。若 `code != 0` 就是权限/字段问题。
 
 ---
 
