@@ -95,3 +95,15 @@
 - 群 `@机器人` 触发 → 搜索 → AI 简报 → 邮件 / WordPress / 飞书文档 / 多维表格归档 → 群内回发图文卡片
 - `url_verification` 握手、`im.message.receive_v1` 事件订阅
 - 先回执（Respond 回执）再执行重活，规避飞书 3s 事件超时重推
+
+## [2026-11-01] 更换飞书机器人（aa5001 → aa6dfb）
+- **需求**：仅更换机器人，其他配置不变。
+- **改动节点（共 3 个）**
+  | 节点 | 参数 | 旧值 | 新值 |
+  |---|---|---|---|
+  | `6 回发获取Token` | `jsonBody.app_id/app_secret` | `cli_aa5001a051ba1c0e` | `cli_aa6dfb150eb89ce1` |
+  | `27 飞书获取Token` | `jsonBody.app_id/app_secret` | `cli_aa5001a051ba1c0e` | `cli_aa6dfb150eb89ce1` |
+  | `33 飞书写搜索表` | `url` 中 app_token / table_id | `ZYoQbrI4Da7pJUslzOucp1Gpnxf` / `tblukKq67q2aRym0` | `I7gebLmALaYcvEs2Azrcojxhn6c` / `tblRk3BUVrWZStmQ` |
+- **为何要改第 33 节点**：新 App 对旧 Base 只读不写（`batch_create` 返回 `91403 Forbidden`）；用旧 App 给新 App 加协作者也被拒（`1063002`）。故由新 App 自建 Base，历史 141 条保留在旧 Base。
+- **验证**：E2E 执行 `#6368` 全 35 节点 success（含建文档/写内容/设权限/写表/上传 6 图/回发卡片）。
+- **顺带修复**：`mcp-files` 容器 Exited(255) 导致 `MCP Client2` 报错 → 已 `docker start mcp-files`。

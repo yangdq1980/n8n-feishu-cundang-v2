@@ -45,6 +45,8 @@ def build_pairs(env: dict):
         (env.get("OLD_FEISHU_APP_SECRET"), "YOUR_OLD_FEISHU_APP_SECRET"),
         (env.get("FEISHU_APP_ID"), "YOUR_FEISHU_APP_ID"),
         (env.get("OLD_FEISHU_APP_ID"), "YOUR_OLD_FEISHU_APP_ID"),
+        (env.get("LEGACY_FEISHU_APP_SECRET"), "YOUR_LEGACY_FEISHU_APP_SECRET"),
+        (env.get("LEGACY_FEISHU_APP_ID"), "YOUR_LEGACY_FEISHU_APP_ID"),
         (env.get("FEISHU_CHAT_ID"), "YOUR_FEISHU_CHAT_ID"),
         # 飞书多维表格（归档目的地）：app_token / table_id 属个人资源标识，同样不应公开
         (env.get("BITABLE_APP_TOKEN"), "YOUR_BITABLE_APP_TOKEN"),
